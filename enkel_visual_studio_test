@@ -1,0 +1,38 @@
+using System.IO.Ports;
+using System;
+using System.Threading;
+
+class Program
+{
+
+    static void Main(string[] args)
+    {
+
+        SerialPort serialPort = new SerialPort("COM5", 9600);
+        try
+        {
+            serialPort.Open();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Error opening serial port: " + ex.Message);
+            return;
+        }
+        Console.WriteLine("Serial port opened successfully");
+
+        string temp;
+
+        while (true)
+        {
+            if(serialPort.BytesToRead >= 0)
+            {
+                Console.WriteLine("Inne i while");
+                temp = serialPort.ReadLine();
+                Console.WriteLine("Lest");
+                Console.Write(temp);
+            }
+        }
+
+
+    }
+}
