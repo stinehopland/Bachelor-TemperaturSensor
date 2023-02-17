@@ -20,7 +20,7 @@ SHT31 sht31 = SHT31();
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
-  while(!Serial);
+  //while(!Serial);
   
   pinMode(LED_BUILTIN, OUTPUT);
   
