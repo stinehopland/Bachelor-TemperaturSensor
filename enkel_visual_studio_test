@@ -9,6 +9,8 @@ class Program
     {
 
         SerialPort serialPort = new SerialPort("COM5", 9600);
+        serialPort.DtrEnable = true;
+
         try
         {
             serialPort.Open();
@@ -28,8 +30,8 @@ class Program
             {
                 Console.WriteLine("Inne i while");
                 temp = serialPort.ReadLine();
+                Console.WriteLine(temp);
                 Console.WriteLine("Lest");
-                Console.Write(temp);
             }
         }
 
