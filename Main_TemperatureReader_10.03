@@ -1,21 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Enumeration;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Data;
-using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
-using Windows.UI.Xaml.Navigation;
 using Windows.UI.Core;
 using Windows.UI.Xaml.Automation.Peers;
 using System.Diagnostics;
@@ -23,9 +14,6 @@ using System.Text;
 using System.Threading.Tasks;
 using Windows.Security.Cryptography;
 using Windows.Storage.Streams;
-using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
-using System.Threading;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -48,6 +36,8 @@ namespace TemperatureReader
 
         public string SelectedBleDeviceId;
         public string SelectedBleDeviceName = "No device selected";
+        public bool SelectedBleDeviceIsConnectable;
+        public bool SelectedBleDeviceIsConnected;
 
         readonly int E_BLUETOOTH_ATT_WRITE_NOT_PERMITTED = unchecked((int)0x80650003);
         readonly int E_BLUETOOTH_ATT_INVALID_PDU = unchecked((int)0x80650004);
@@ -122,10 +112,9 @@ namespace TemperatureReader
             if (deviceWatcher == null)
             {
                 StartBleDeviceWatcher();
-                ConnectButton.Content = "Connecting";
+                ConnectButton.Content = "Disconnect";
                 NotifyUser($"Device watcher started.", NotifyType.StatusMessage);
             }
-
             else
             {
                 StopBleDeviceWatcher();
@@ -133,103 +122,111 @@ namespace TemperatureReader
                 NotifyUser($"Device watcher stopped.", NotifyType.StatusMessage);
             }
 
-            Thread.Sleep(15000);
-
             //Koden under her kobler til Arduino
-            var bleDeviceDisplay = FindBluetoothLEDeviceDisplay("Nano 33 BLE") as BluetoothLEDeviceDisplay;
+            var bleDeviceDisplay = await WaitForBluetoothLEDeviceDisplay("Nano 33 BLE");
             if (bleDeviceDisplay != null)
             {
                 //StopBleDeviceWatcher();
                 SelectedBleDeviceId = bleDeviceDisplay.Id;
                 SelectedBleDeviceName = bleDeviceDisplay.Name;
-                ConnectButton.Content = "Disconnect";
-                NotifyUser($"Device watcher stopped. Nano 33 BLE found.", NotifyType.StatusMessage);
-                bluetoothLeDevice = await BluetoothLEDevice.FromIdAsync(SelectedBleDeviceId);
+                SelectedBleDeviceIsConnectable = bleDeviceDisplay.IsConnectable;
+                SelectedBleDeviceIsConnected = bleDeviceDisplay.IsConnected;
+                ConnectButton.Content = "Connect";
+                NotifyUser($"Nano 33 BLE found.", NotifyType.StatusMessage);
             }
-            else
-            {
-                NotifyUser($"Leter etter Nano 33 BLE...", NotifyType.StatusMessage);
-            }
-            
+            NotifyUser($"DeviceId: {SelectedBleDeviceId} DeviceName: {SelectedBleDeviceName} DeviceIsConnectable: {SelectedBleDeviceIsConnectable} DeviceIsConnected: {SelectedBleDeviceIsConnected}", NotifyType.StatusMessage);
+            bluetoothLeDevice = await BluetoothLEDevice.FromIdAsync(SelectedBleDeviceId);
+            //NotifyUser($"BluetoothLeDevice: {bluetoothLeDevice.DeviceId}", NotifyType.StatusMessage);
 
-            if (bluetoothLeDevice != null)
-            {
-                GattDeviceServicesResult result = await bluetoothLeDevice.GetGattServicesAsync(BluetoothCacheMode.Uncached);
-                if (result.Status == GattCommunicationStatus.Success)
+                try
                 {
-                    var services = result.Services;
-                    NotifyUser(String.Format("Found {0} services", services.Count), NotifyType.StatusMessage);
-                    foreach (var service in services)
+                    if (bluetoothLeDevice != null)
                     {
-                        if (DisplayHelpers.GetServiceName(service) == "DeviceInformation")
+                        NotifyUser($"BluetoothLeDevice != null", NotifyType.StatusMessage);
+                        GattDeviceServicesResult result = await bluetoothLeDevice.GetGattServicesAsync(BluetoothCacheMode.Uncached);
+                        if (result.Status == GattCommunicationStatus.Success)
                         {
-                            IReadOnlyList<GattCharacteristic> characteristics;
-                            try
+                            var services = result.Services;
+                            NotifyUser(String.Format("Found {0} services", services.Count), NotifyType.StatusMessage);
+                            foreach (var service in services)
                             {
-                                //Ensure we have access to the device
-                                var accessStatus = await service.RequestAccessAsync();
-                                if (accessStatus == DeviceAccessStatus.Allowed)
+                                if (DisplayHelpers.GetServiceName(service) == "DeviceInformation")
                                 {
-                                    var result2 = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
-                                    if (result2.Status == GattCommunicationStatus.Success)
+                                    IReadOnlyList<GattCharacteristic> characteristics;
+                                    try
                                     {
-                                        characteristics = result2.Characteristics;
+                                        //Ensure we have access to the device
+                                        var accessStatus = await service.RequestAccessAsync();
+                                        if (accessStatus == DeviceAccessStatus.Allowed)
+                                        {
+                                            var result2 = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
+                                            if (result2.Status == GattCommunicationStatus.Success)
+                                            {
+                                                characteristics = result2.Characteristics;
+                                            }
+                                            else
+                                            {
+                                                NotifyUser("Error accessing service.", NotifyType.ErrorMessage);
+                                                characteristics = new List<GattCharacteristic>();
+                                            }
+                                        }
+                                        else
+                                        {
+                                            NotifyUser("Error accessing service.", NotifyType.ErrorMessage);
+                                            characteristics = new List<GattCharacteristic>();
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        NotifyUser("Restricted service." + ex.Message,
+                                            NotifyType.ErrorMessage);
+                                        characteristics = new List<GattCharacteristic>();
+                                    }
+                                    foreach (GattCharacteristic c in characteristics)
+                                    {
+                                        if (DisplayHelpers.GetCharacteristicName(c) == "TemperatureinCelsius")
+                                        {
+                                            selectedCharacteristic = c;
+                                        }
+                                        if (selectedCharacteristic == null)
+                                        {
+                                            NotifyUser("Characteristic not found", NotifyType.ErrorMessage);
+                                            return;
+                                        }
+                                    }
+
+                                    var result3 = await selectedCharacteristic.GetDescriptorsAsync(BluetoothCacheMode.Uncached);
+                                    if (result3.Status != GattCommunicationStatus.Success)
+                                    {
+                                        NotifyUser("Descriptor read failure: " + result.Status.ToString(), NotifyType.ErrorMessage);
+                                    }
+
+                                    GattReadResult result4 = await selectedCharacteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
+                                    if (result4.Status == GattCommunicationStatus.Success)
+                                    {
+                                        string formattedResult = FormatValueByPresentation(result4.Value, presentationFormat);
+                                        NotifyUser($"Read result: {formattedResult}", NotifyType.StatusMessage);
                                     }
                                     else
                                     {
-                                        NotifyUser("Error accessing service.", NotifyType.ErrorMessage);
-                                        characteristics = new List<GattCharacteristic>();
+                                        NotifyUser($"Read failed: {result.Status}", NotifyType.ErrorMessage);
                                     }
                                 }
-                                else
-                                {
-                                    NotifyUser("Error accessing service.", NotifyType.ErrorMessage);
-                                    characteristics = new List<GattCharacteristic>();
-                                }
                             }
-                            catch (Exception ex)
-                            {
-                                NotifyUser("Restricted service." + ex.Message,
-                                    NotifyType.ErrorMessage);
-                                characteristics = new List<GattCharacteristic>();
-                            }
-                            foreach (GattCharacteristic c in characteristics)
-                            {
-                                if (DisplayHelpers.GetCharacteristicName(c) == "TemperatureinCelsius")
-                                {
-                                    selectedCharacteristic = c;
-                                }
-                                if (selectedCharacteristic == null)
-                                {
-                                    NotifyUser("Characteristic not found", NotifyType.ErrorMessage);
-                                    return;
-                                }
-                            }
-
-                            var result3 = await selectedCharacteristic.GetDescriptorsAsync(BluetoothCacheMode.Uncached);
-                            if (result3.Status != GattCommunicationStatus.Success)
-                            {
-                                NotifyUser("Descriptor read failure: " + result.Status.ToString(), NotifyType.ErrorMessage);
-                            }
-
-                            GattReadResult result4 = await selectedCharacteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
-                            if (result4.Status == GattCommunicationStatus.Success)
-                            {
-                                string formattedResult = FormatValueByPresentation(result4.Value, presentationFormat);
-                                NotifyUser($"Read result: {formattedResult}", NotifyType.StatusMessage);
-                            }
-                            else
-                            {
-                                NotifyUser($"Read failed: {result.Status}", NotifyType.ErrorMessage);
-                            }
+                        }
+                        else
+                        {
+                            NotifyUser("Device unreachable", NotifyType.ErrorMessage);
                         }
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    NotifyUser("Device unreachable", NotifyType.ErrorMessage);
-                }                                 
-            }
+                    NotifyUser($"Error: {ex.Message}", NotifyType.ErrorMessage);
+                }
+            
+
+            //NotifyUser("Connect_button program finished", NotifyType.StatusMessage);
             ConnectButton.IsEnabled = true;
         }
 
@@ -279,6 +276,18 @@ namespace TemperatureReader
                 deviceWatcher = null;
             }
         }
+
+        private async Task<BluetoothLEDeviceDisplay> WaitForBluetoothLEDeviceDisplay(string deviceName)
+        {
+            BluetoothLEDeviceDisplay result = null;
+            while (result == null)
+            {
+                await Task.Delay(1000); // Wait for 1 second before checking again
+                result = FindBluetoothLEDeviceDisplay(deviceName);
+            }
+            return result;
+        }
+
         private BluetoothLEDeviceDisplay FindBluetoothLEDeviceDisplay(string name)
         {
             foreach (BluetoothLEDeviceDisplay bleDeviceDisplay in KnownDevices)
@@ -575,4 +584,3 @@ namespace TemperatureReader
             }
         }
     }
-}
