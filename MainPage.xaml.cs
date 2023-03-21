@@ -19,6 +19,9 @@ using Windows.Storage.Pickers;
 using Windows.Storage;
 using System.Linq;
 using Microsoft.VisualBasic;
+using System.Data.SqlTypes;
+using Windows.UI.Text.Core;
+using System.Threading;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -51,6 +54,11 @@ namespace BLE_program
         private DeviceWatcher deviceWatcher;
 
         public GattDeviceService SelectedGattService { get; private set; }
+
+        private bool isReading = false;
+        private StreamWriter writer;
+        private CancellationTokenSource cts;
+
 
         public MainPage()
         {
@@ -324,6 +332,7 @@ namespace BLE_program
         {
             ConnectButton.IsEnabled = false;
             NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage);
+
             var bleDeviceDisplay = ResultsListView.SelectedItem as BluetoothLEDeviceDisplay;
             if (bleDeviceDisplay != null)
             {
@@ -376,10 +385,15 @@ namespace BLE_program
             }
             ConnectButton.IsEnabled = true;
         }
-        
+
         //This method is called when a user clicks the UI button named 'CharacteristicReadButton'
         private async void CharacteristicReadButton_Click()
         {
+            if (isReading)
+            {
+                return;
+            }
+
             // Prompt the user to choose a file name and location
             FileSavePicker savePicker = new FileSavePicker();
             savePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
@@ -395,38 +409,55 @@ namespace BLE_program
             _ = file.Path;
 
             //Open the stream for writing
-            StreamWriter writer = new StreamWriter(await file.OpenStreamForWriteAsync());
-
-            try
+            using (StreamWriter writer = new StreamWriter(await file.OpenStreamForWriteAsync()))
             {
-                // BT_Code: Read the actual value from the device by using Uncached.
-                while (true)
+                // enable the stop button and disable the read button
+                StopButton.IsEnabled = true;
+                CharacteristicReadButton.IsEnabled = false;
+
+                isReading = true;
+
+                cts = new CancellationTokenSource();
+                CancellationToken token = cts.Token;
+
+                try
                 {
-                    GattReadResult result = await selectedCharacteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
-                    if (result.Status == GattCommunicationStatus.Success)
+                    // BT_Code: Read the actual value from the device by using Uncached.
+                    while (!token.IsCancellationRequested)
                     {
-                        string formattedResult = FormatValueByPresentation(result.Value, presentationFormat);
+                        GattReadResult result = await selectedCharacteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
+                        if (result.Status == GattCommunicationStatus.Success)
+                        {
+                            string formattedResult = FormatValueByPresentation(result.Value, presentationFormat);
 
-                        //add timestamp
-                        string valueWithTimeStamp = $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")} - {formattedResult}";
+                            //add timestamp
+                            string valueWithTimeStamp = $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")} - {formattedResult}";
 
-                        await writer.WriteLineAsync(valueWithTimeStamp);
-                        await writer.FlushAsync();
+                            await writer.WriteLineAsync(valueWithTimeStamp);
+                            await writer.FlushAsync();
 
-                        NotifyUser($"Read result: {formattedResult}", NotifyType.StatusMessage);
+                            NotifyUser($"Read result: {formattedResult}", NotifyType.StatusMessage);
+                        }
+                        else
+                        {
+                            NotifyUser($"Read failed: {result.Status}", NotifyType.ErrorMessage);
+                        }
+                        await Task.Delay(1000, token);
                     }
-                    else
-                    {
-                        NotifyUser($"Read failed: {result.Status}", NotifyType.ErrorMessage);
-                    }
-                    await Task.Delay(1000);
+                }
+                catch (TaskCanceledException)
+                {
+                    // Task was cancelled
+                }
+                finally
+                {
+                    isReading = false;
+                    CharacteristicReadButton.IsEnabled = true;
+                    StopButton.IsEnabled = false;
                 }
             }
-            finally
-            {
-                writer.Dispose();
-            }
         }
+
 
         private string FormatValueByPresentation(IBuffer buffer, GattPresentationFormat format)
         {
@@ -491,9 +522,28 @@ namespace BLE_program
             return "Unknown format";
         }
 
-        private void StopButton_Click(object sender, RoutedEventArgs e)
+        private async void StopButton_Click(object sender, RoutedEventArgs e)
         {
+            if (!isReading)
+            {
+                return;
+            }
 
+            isReading = false;
+            CharacteristicReadButton.IsEnabled = true;
+            StopButton.IsEnabled = false;
+
+            // Cancel the reading loop
+            cts.Cancel();
+
+            // Dispose of the StreamWriter object if it exists
+            if (writer != null)
+            {
+                writer.Dispose();
+            }
+
+            NotifyUser("Stopped reading temperature values and closed file", NotifyType.StatusMessage);
         }
+
     }
 }
