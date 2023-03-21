@@ -522,7 +522,7 @@ namespace BLE_program
             return "Unknown format";
         }
 
-        private async void StopButton_Click(object sender, RoutedEventArgs e)
+        private void StopButton_Click(object sender, RoutedEventArgs e)
         {
             if (!isReading)
             {
