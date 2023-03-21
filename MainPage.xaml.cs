@@ -339,6 +339,7 @@ namespace BLE_program
         private async void ConnectButton_Click()
         {
             StopBleDeviceWatcher();
+            EnumerateButton.Content = "Enumerating stopped";
 
             ConnectButton.IsEnabled = false;
             NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage, StatusBlock, StatusBorder);
