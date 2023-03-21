@@ -22,6 +22,7 @@ using Microsoft.VisualBasic;
 using System.Data.SqlTypes;
 using Windows.UI.Text.Core;
 using System.Threading;
+using Windows.UI.Xaml.Documents;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -308,8 +309,7 @@ namespace BLE_program
             {
                 if (sender == deviceWatcher)
                 {
-                    NotifyUser($"{KnownDevices.Count} devices found. Enumeration completed.",
-                        NotifyType.StatusMessage);
+                    //Enumeration completed
                 }
             });
         }
@@ -447,7 +447,7 @@ namespace BLE_program
                 }
                 catch (TaskCanceledException)
                 {
-                    // Task was cancelled
+                    //The task was canceled
                 }
                 finally
                 {
