@@ -322,21 +322,13 @@ namespace BLE_program
         //Connect Button
         private async void ConnectButton_Click()
         {
-            StartEnumerater();
-
             ConnectButton.IsEnabled = false;
             NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage);
-
-            var bleDeviceDisplay = FindBluetoothLEDeviceDisplay("BluetoothLE#BluetoothLE58:96:1d:3e:16:55-dd:e1:4d:44:8f:b9") as BluetoothLEDeviceDisplay;
+            var bleDeviceDisplay = ResultsListView.SelectedItem as BluetoothLEDeviceDisplay;
             if (bleDeviceDisplay != null)
             {
-                StopBleDeviceWatcher();
                 SelectedBleDeviceId = bleDeviceDisplay.Id;
                 SelectedBleDeviceName = bleDeviceDisplay.Name;
-            }
-            else
-            {
-                NotifyUser($"Could not find Arduino", NotifyType.StatusMessage);
             }
             bluetoothLeDevice = await BluetoothLEDevice.FromIdAsync(SelectedBleDeviceId);
 
@@ -384,13 +376,7 @@ namespace BLE_program
             }
             ConnectButton.IsEnabled = true;
         }
-
-        private void SetVisibility(UIElement element, bool visible)
-        {
-            element.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-
+        
         //This method is called when a user clicks the UI button named 'CharacteristicReadButton'
         private async void CharacteristicReadButton_Click()
         {
