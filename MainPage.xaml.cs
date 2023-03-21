@@ -338,6 +338,8 @@ namespace BLE_program
         //Connect Button
         private async void ConnectButton_Click()
         {
+            StopBleDeviceWatcher();
+
             ConnectButton.IsEnabled = false;
             NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage, StatusBlock, StatusBorder);
 
