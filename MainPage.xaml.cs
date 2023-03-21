@@ -49,6 +49,12 @@ namespace BLE_program
         public string SelectedBleDeviceId;
         public string SelectedBleDeviceName = "No device selected";
 
+        public int TemperatureSetValue;
+        public decimal CurrentTemperature;
+        public decimal Difference;
+
+        public bool HeatElement;
+
         private ObservableCollection<BluetoothLEDeviceDisplay> KnownDevices = new ObservableCollection<BluetoothLEDeviceDisplay>();
         private List<DeviceInformation> UnknownDevices = new List<DeviceInformation>();
 
@@ -67,47 +73,39 @@ namespace BLE_program
         }
 
         ////Display a message to the user.
-        public void NotifyUser(string strMessage, NotifyType type)
+        public void NotifyUser(string strMessage, NotifyType type, TextBlock targetBlock, Border targetBorder)
         {
             // If called from the UI thread, then update immediately.
             // Otherwise, schedule a task on the UI thread to perform the update.
             if (Dispatcher.HasThreadAccess)
             {
-                UpdateStatus(strMessage, type);
+                UpdateStatus(strMessage, type, targetBlock, targetBorder);
             }
             else
             {
-                var task = Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () => UpdateStatus(strMessage, type));
+                var task = Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () => UpdateStatus(strMessage, type, targetBlock, targetBorder));
             }
         }
-        private void UpdateStatus(string strMessage, NotifyType type)
+
+        private void UpdateStatus(string strMessage, NotifyType type, TextBlock targetBlock, Border targetBorder)
         {
             switch (type)
             {
                 case NotifyType.StatusMessage:
-                    StatusBorder.Background = new SolidColorBrush(Windows.UI.Colors.Green);
+                    targetBorder.Background = new SolidColorBrush(Windows.UI.Colors.Green);
                     break;
                 case NotifyType.ErrorMessage:
-                    StatusBorder.Background = new SolidColorBrush(Windows.UI.Colors.Red);
+                    targetBorder.Background = new SolidColorBrush(Windows.UI.Colors.Red);
                     break;
             }
 
-            //Må legge inn en statusblock i UI for å printe meldinger til NotifyUser
-            StatusBlock.Text = strMessage;
+            targetBlock.Text = strMessage;
 
-            // Collapse the StatusBlock if it has no text to conserve real estate.
-            StatusBorder.Visibility = (StatusBlock.Text != String.Empty) ? Visibility.Visible : Visibility.Collapsed;
-            if (StatusBlock.Text != String.Empty)
-            {
-                StatusBorder.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                StatusBorder.Visibility = Visibility.Collapsed;
-            }
+            // Collapse the target block if it has no text to conserve real estate.
+            targetBlock.Visibility = (targetBlock.Text != String.Empty) ? Visibility.Visible : Visibility.Collapsed;
 
             // Raise an event if necessary to enable a screen reader to announce the status update.
-            var peer = FrameworkElementAutomationPeer.FromElement(StatusBlock);
+            var peer = FrameworkElementAutomationPeer.FromElement(targetBlock);
             peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
         }
 
@@ -120,13 +118,13 @@ namespace BLE_program
             {
                 StartBleDeviceWatcher();
                 EnumerateButton.Content = "Stop enumerating";
-                NotifyUser($"Device watcher started.", NotifyType.StatusMessage);
+                NotifyUser($"Device watcher started.", NotifyType.StatusMessage, StatusBlock, StatusBorder);
             }
             else
             {
                 StopBleDeviceWatcher();
                 EnumerateButton.Content = "Start enumerating";
-                NotifyUser($"Device watcher stopped.", NotifyType.StatusMessage);
+                NotifyUser($"Device watcher stopped.", NotifyType.StatusMessage, StatusBlock, StatusBorder);
             }
         }
 
@@ -135,7 +133,7 @@ namespace BLE_program
             if (deviceWatcher == null)
             {
                 StartBleDeviceWatcher();
-                NotifyUser($"Device watcher started.", NotifyType.StatusMessage);
+                NotifyUser($"Device watcher started.", NotifyType.StatusMessage, StatusBlock, StatusBorder);
             }
         }
 
@@ -322,7 +320,7 @@ namespace BLE_program
                 if (sender == deviceWatcher)
                 {
                     NotifyUser($"No longer watching for devices.",
-                        sender.Status == DeviceWatcherStatus.Aborted ? NotifyType.ErrorMessage : NotifyType.StatusMessage);
+                        sender.Status == DeviceWatcherStatus.Aborted ? NotifyType.ErrorMessage : NotifyType.StatusMessage, StatusBlock, StatusBorder);
                 }
             });
         }
@@ -331,7 +329,7 @@ namespace BLE_program
         private async void ConnectButton_Click()
         {
             ConnectButton.IsEnabled = false;
-            NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage);
+            NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage, StatusBlock, StatusBorder);
 
             var bleDeviceDisplay = ResultsListView.SelectedItem as BluetoothLEDeviceDisplay;
             if (bleDeviceDisplay != null)
@@ -350,7 +348,7 @@ namespace BLE_program
                     if (deviceInformationService != null)
                     {
                         SelectedGattService = deviceInformationService;
-                        NotifyUser("Connected to device information service", NotifyType.StatusMessage);
+                        NotifyUser("Connected to device information service", NotifyType.StatusMessage, StatusBlock, StatusBorder);
 
                         //Get the temperature characteristic
                         var characteristicResult = await SelectedGattService.GetCharacteristicsForUuidAsync(GattCharacteristicUuids.TemperatureMeasurement, BluetoothCacheMode.Uncached);
@@ -360,27 +358,27 @@ namespace BLE_program
                             if (temperatureInCelsiusCharacteristic != null)
                             {
                                 selectedCharacteristic = temperatureInCelsiusCharacteristic;
-                                NotifyUser("Connected to TemperatureInCelsius characteristic", NotifyType.StatusMessage);
+                                NotifyUser("Connected to TemperatureInCelsius characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
                             }
                             else
                             {
-                                NotifyUser("characteristic not found", NotifyType.ErrorMessage);
+                                NotifyUser("characteristic not found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
                             }
                         }
                         else
                         {
-                            NotifyUser("Error accessing characteristic", NotifyType.ErrorMessage);
+                            NotifyUser("Error accessing characteristic", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
                         }
                     }
                     else
                     {
-                        NotifyUser("Device Info not found", NotifyType.ErrorMessage);
+                        NotifyUser("Device Info not found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
                     }
                     ConnectButton.Content = "Connected";
                 }
                 else
                 {
-                    NotifyUser("Device unreachable", NotifyType.ErrorMessage);
+                    NotifyUser("Device unreachable", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
                 }
             }
             ConnectButton.IsEnabled = true;
@@ -436,11 +434,11 @@ namespace BLE_program
                             await writer.WriteLineAsync(valueWithTimeStamp);
                             await writer.FlushAsync();
 
-                            NotifyUser($"Read result: {formattedResult}", NotifyType.StatusMessage);
+                            NotifyUser($"Read result: {formattedResult}", NotifyType.StatusMessage, StatusBlock, StatusBorder);
                         }
                         else
                         {
-                            NotifyUser($"Read failed: {result.Status}", NotifyType.ErrorMessage);
+                            NotifyUser($"Read failed: {result.Status}", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
                         }
                         await Task.Delay(1000, token);
                     }
@@ -542,8 +540,42 @@ namespace BLE_program
                 writer.Dispose();
             }
 
-            NotifyUser("Stopped reading temperature values and closed file", NotifyType.StatusMessage);
+            NotifyUser("Stopped reading temperature values and closed file", NotifyType.StatusMessage, StatusBlock, StatusBorder);
         }
 
+        private void StartComparing_Click(object sender, RoutedEventArgs e)
+        {
+            if (int.TryParse(tbGivenValue.Text, out int givenValue))
+            {
+                TemperatureSetValue = givenValue;
+            }
+            else
+            {
+                NotifyUser($"Please enter a valid integer number.", NotifyType.ErrorMessage, StatusBlockRegulator, StatusBorderRegulator);
+            }
+
+            Difference = TemperatureSetValue - CurrentTemperature;
+
+            if (Difference > 1)
+            {
+                HeatElement = true;
+                NotifyUser($"Set temperature is higher than current temperature. Heating element turned on.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+            }
+            else if (Difference < 1)
+            {
+                HeatElement = false;
+                NotifyUser($"Set temperature is lower than current temperature. Heating element turned off.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+            }
+            else
+            {
+                HeatElement = false;
+                NotifyUser($"Current temperature is within 1 degree celsius of set temperature.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+            }
+        }
+
+        private void StopComparing_Click(object sender, RoutedEventArgs e)
+        {
+
+        }
     }
 }
