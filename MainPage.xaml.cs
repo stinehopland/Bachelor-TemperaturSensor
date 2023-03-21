@@ -23,6 +23,7 @@ using System.Data.SqlTypes;
 using Windows.UI.Text.Core;
 using System.Threading;
 using Windows.UI.Xaml.Documents;
+using Windows.Security.Authentication.Web.Provider;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -49,9 +50,9 @@ namespace BLE_program
         public string SelectedBleDeviceId;
         public string SelectedBleDeviceName = "No device selected";
 
-        public int TemperatureSetValue;
-        public decimal CurrentTemperature;
-        public decimal Difference;
+        public float TemperatureSetValue;
+        public float CurrentTemperature;
+        public float Difference;
 
         public bool HeatElement;
 
@@ -65,11 +66,18 @@ namespace BLE_program
         private bool isReading = false;
         private StreamWriter writer;
         private CancellationTokenSource cts;
+        private CancellationTokenSource cts2;
 
 
         public MainPage()
         {
             InitializeComponent();
+
+            ConnectButton.IsEnabled = false;
+            CharacteristicReadButton.IsEnabled = false;
+            StopButton.IsEnabled = false;
+            StartComparing.IsEnabled = false;
+            StopComparing.IsEnabled = false;
         }
 
         ////Display a message to the user.
@@ -126,6 +134,8 @@ namespace BLE_program
                 EnumerateButton.Content = "Start enumerating";
                 NotifyUser($"Device watcher stopped.", NotifyType.StatusMessage, StatusBlock, StatusBorder);
             }
+
+            ConnectButton.IsEnabled = true;
         }
 
         private void StartEnumerater()
@@ -382,6 +392,7 @@ namespace BLE_program
                 }
             }
             ConnectButton.IsEnabled = true;
+            CharacteristicReadButton.IsEnabled = true;
         }
 
         //This method is called when a user clicks the UI button named 'CharacteristicReadButton'
@@ -441,6 +452,7 @@ namespace BLE_program
                             NotifyUser($"Read failed: {result.Status}", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
                         }
                         await Task.Delay(1000, token);
+                        StartComparing.IsEnabled = true;
                     }
                 }
                 catch (TaskCanceledException)
@@ -453,6 +465,7 @@ namespace BLE_program
                     CharacteristicReadButton.IsEnabled = true;
                     StopButton.IsEnabled = false;
                 }
+                StopButton.IsEnabled = true;
             }
         }
 
@@ -505,7 +518,8 @@ namespace BLE_program
                 {
                     try
                     {
-                        return "Temperatur = " + BitConverter.ToSingle(data, 0) + " Grader Celsius";
+                        CurrentTemperature = BitConverter.ToSingle(data, 0);
+                        return "Temperatur = " + CurrentTemperature  + " Grader Celsius";
                     }
                     catch (ArgumentException)
                     {
@@ -543,39 +557,52 @@ namespace BLE_program
             NotifyUser("Stopped reading temperature values and closed file", NotifyType.StatusMessage, StatusBlock, StatusBorder);
         }
 
-        private void StartComparing_Click(object sender, RoutedEventArgs e)
+        private async Task CompareTemperatureAndControlHeatingElement()
         {
-            if (int.TryParse(tbGivenValue.Text, out int givenValue))
+            while (!cts2.IsCancellationRequested)
             {
-                TemperatureSetValue = givenValue;
+                Difference = TemperatureSetValue - CurrentTemperature;
+
+                if (Difference >= 1)
+                {
+                    HeatElement = true;
+                    NotifyUser($"Set temperature is higher than current temperature. Heating element turned on.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+                }
+                else if (Difference <= -1)
+                {
+                    HeatElement = false;
+                    NotifyUser($"Set temperature is lower than current temperature. Heating element turned off.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+                }
+                else
+                {
+                    HeatElement = false;
+                    NotifyUser($"Current temperature is within 1 degree celsius of set temperature.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+                }
+                HeatElement = Difference > 1;
+                await Task.Delay(1000);
             }
-            else
+        }
+
+        private async void StartComparing_Click(object sender, RoutedEventArgs e)
+        {
+            StartComparing.IsEnabled = false;
+            StopComparing.IsEnabled = true;
+            cts2 = new CancellationTokenSource();
+            CancellationToken token2 = cts2.Token;
+            if (!float.TryParse(tbGivenValue.Text, out float givenValue))
             {
                 NotifyUser($"Please enter a valid integer number.", NotifyType.ErrorMessage, StatusBlockRegulator, StatusBorderRegulator);
+                cts2.Cancel();
             }
 
-            Difference = TemperatureSetValue - CurrentTemperature;
-
-            if (Difference > 1)
-            {
-                HeatElement = true;
-                NotifyUser($"Set temperature is higher than current temperature. Heating element turned on.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
-            }
-            else if (Difference < 1)
-            {
-                HeatElement = false;
-                NotifyUser($"Set temperature is lower than current temperature. Heating element turned off.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
-            }
-            else
-            {
-                HeatElement = false;
-                NotifyUser($"Current temperature is within 1 degree celsius of set temperature.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
-            }
+            TemperatureSetValue = givenValue;
+            await Task.Run(() => CompareTemperatureAndControlHeatingElement());
         }
 
         private void StopComparing_Click(object sender, RoutedEventArgs e)
         {
-
+            cts2.Cancel();
+            NotifyUser($"Temperature regulating stopped", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
         }
     }
 }
