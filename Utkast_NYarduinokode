@@ -1,0 +1,113 @@
+/*
+  SHT31 er Grove sin temperatur- og 
+  fuktighetssensor. Vi bruker denne sammen
+  med arduino nano 33 BLE for å printe ut
+  temperatur-verdiene til Seriell Monitor
+  én gang i sekundet. 
+  Dette programmet skal skrive ut temperatur når man er koblet til arduino
+  med bluetooth.
+*/
+#include <ArduinoBLE.h>
+#include <SHT31.h>
+
+BLEService temperatureService("180A"); //BLE LED Service: Device information service
+
+BLEFloatCharacteristic temperatureCharacteristic("2A1C", BLERead); // BLE temperature Characteristic: Temperature measurement
+BLEBoolCharacteristic heatElementCharacteristic("2AE2", BLEWrite, BLERead); // BLE Characteristic for Heat Element: Boolean (On or off)
+
+float temp = 0;
+const int HEATING_ELEMENT_PIN = 9; // replace with the pin used to control the heating element
+
+unsigned long previousMillis = 0;
+const long interval = 500;
+
+SHT31 sht31 = SHT31();
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  
+  pinMode(LED_BUILTIN, OUTPUT);
+  
+  Serial.println("Begynn...");
+  sht31.begin();
+  
+  if (!sht31.begin()){
+    Serial.print("Temperature sensor not connected");
+  }
+  else{
+    Serial.println("Temperature sensor connected");
+  }
+  
+  // error message if Bluetooth does not begin
+  if(!BLE.begin()){
+    Serial.println("Starting BLE failed!");
+    while(1);
+  }
+
+  // set advertised local name and service UUID:
+  BLE.setLocalName("Nano 33 BLE");
+  BLE.setAdvertisedService(temperatureService); 
+
+  // add the characteristics of the service
+  temperatureService.addCharacteristic(temperatureCharacteristic);
+  temperatureService.addCharacteristic(heatElementCharacteristic);
+
+  // add service
+  BLE.addService(temperatureService);
+
+  // start advertising
+  BLE.advertise();
+  Serial.print("Pheripheral device Bluetooth Address: ");
+  Serial.println(BLE.address());
+  Serial.println("Waiting for connections..");
+
+}
+
+void setHeatElement() {
+  bool heatElementValue = heatElementCharacteristic.readValue();
+  if (heatElementValue) {
+    // turn on heating element
+    digitalWrite(HEATING_ELEMENT_PIN, HIGH);
+  } else {
+    // turn off heating element
+    digitalWrite(HEATING_ELEMENT_PIN, LOW);
+  }
+}
+
+void loop() {
+  // listen for BLE central to connect:
+  BLEDevice central = BLE.central();
+  
+  // if a central is connected to peripheral:
+  if (central){
+    Serial.println("Connected to central.");
+    Serial.print("The clients MAC address is: ");
+    // print the central's MAC address:
+    Serial.println(central.address());
+    Serial.print("Pheripheral device Bluetooth Address: ");
+    Serial.println(BLE.address());
+    digitalWrite(LED_BUILTIN, HIGH); // turn on LED to show it's connected
+    
+    // while central is connected to peripheral:
+    while(central.connected()){
+      temp = sht31.getTemperature();
+
+      //check if it is time to print temperature value
+      unsigned long currentMillis = millis();
+      if (currentMillis - previousMillis >= interval){
+        previousMillis = currentMillis;
+        
+        temperatureCharacteristic.writeValue(temp);
+      }
+
+      // read heatElementCharacteristic value and set heating element
+      setHeatElement();
+    }
+
+    // when the central disconnects:
+    digitalWrite(LED_BUILTIN, LOW);
+    Serial.print(F("Disconnected from central: "));
+    Serial.println(central.address());    
+  }
+}
