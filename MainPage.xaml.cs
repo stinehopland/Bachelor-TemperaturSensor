@@ -47,6 +47,12 @@ namespace BLE_program
         private GattCharacteristic registeredCharacteristic;
         private GattPresentationFormat presentationFormat;
 
+        //Error codes
+        readonly int E_BLUETOOTH_ATT_WRITE_NOT_PERMITTED = unchecked((int)0x80650003);
+        readonly int E_BLUETOOTH_ATT_INVALID_PDU = unchecked((int)0x80650004);
+        readonly int E_ACCESSDENIED = unchecked((int)0x80070005);
+        readonly int E_DEVICE_NOT_AVAILABLE = unchecked((int)0x800710df);
+
         public string SelectedBleDeviceId;
         public string SelectedBleDeviceName = "No device selected";
 
@@ -470,6 +476,48 @@ namespace BLE_program
                 }
                 StopButton.IsEnabled = true;
             }
+        }
+
+        private async Task<bool> WriteBufferToSelectedCharacteristicAsync(IBuffer buffer)
+        {
+            try
+            {
+                // BT_Code: Writes the value from the buffer to the characteristic.
+                var result = await selectedCharacteristic.WriteValueWithResultAsync(buffer);
+
+                if (result.Status == GattCommunicationStatus.Success)
+                {
+                    NotifyUser("Successfully wrote value to device", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+                    return true;
+                }
+                else
+                {
+                    NotifyUser($"Write failed: {result.Status}", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                    return false;
+                }
+            }
+            catch (Exception ex) when (ex.HResult == E_BLUETOOTH_ATT_INVALID_PDU)
+            {
+                NotifyUser(ex.Message, NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                return false;
+            }
+            catch (Exception ex) when (ex.HResult == E_BLUETOOTH_ATT_WRITE_NOT_PERMITTED || ex.HResult == E_ACCESSDENIED)
+            {
+                // This usually happens when a device reports that it support writing, but it actually doesn't.
+                NotifyUser(ex.Message, NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                return false;
+            }
+        }
+        private bool subscribedForNotifications = false;
+
+        private async void Characteristic_ValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
+        {
+            // BT_Code: An Indicate or Notify reported that the value has changed.
+            // Display the new value with a timestamp.
+            var newValue = FormatValueByPresentation(args.CharacteristicValue, presentationFormat);
+            var message = $"Value at {DateTime.Now:hh:mm:ss.FFF}: {newValue}";
+            await Dispatcher.RunAsync(CoreDispatcherPriority.Normal,
+                () => CharacteristicLatestValue.Text = message);
         }
 
 
