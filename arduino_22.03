@@ -13,10 +13,10 @@
 BLEService temperatureService("180A"); //BLE LED Service: Device information service
 
 BLEFloatCharacteristic temperatureCharacteristic("2A1C", BLERead); // BLE temperature Characteristic: Temperature measurement
-BLEBoolCharacteristic heatElementCharacteristic("2AE2", BLEWrite, BLERead); // BLE Characteristic for Heat Element: Boolean (On or off)
+BLEBooleanCharacteristic heatElementCharacteristic("2A3F", BLERead | BLEWrite); // BLE Characteristic for Heat Element: Alert Status (On or off)
 
 float temp = 0;
-const int HEATING_ELEMENT_PIN = 9; // replace with the pin used to control the heating element
+const int HEATING_ELEMENT_PIN = 27; // replace with the pin used to control the heating element
 
 unsigned long previousMillis = 0;
 const long interval = 500;
@@ -55,6 +55,8 @@ void setup() {
 
   // add service
   BLE.addService(temperatureService);
+  
+  heatElementCharacteristic.writeValue(false);
 
   // start advertising
   BLE.advertise();
@@ -64,16 +66,6 @@ void setup() {
 
 }
 
-void setHeatElement() {
-  bool heatElementValue = heatElementCharacteristic.readValue();
-  if (heatElementValue) {
-    // turn on heating element
-    digitalWrite(HEATING_ELEMENT_PIN, HIGH);
-  } else {
-    // turn off heating element
-    digitalWrite(HEATING_ELEMENT_PIN, LOW);
-  }
-}
 
 void loop() {
   // listen for BLE central to connect:
@@ -91,7 +83,19 @@ void loop() {
     
     // while central is connected to peripheral:
     while(central.connected()){
+      boolean heatElementValue = heatElementCharacteristic.value();
+      
+      if (heatElementValue) {
+      // turn on heating element
+      digitalWrite(HEATING_ELEMENT_PIN, HIGH);
+      } 
+      else {
+      // turn off heating element
+      digitalWrite(HEATING_ELEMENT_PIN, LOW);
+      }
+      
       temp = sht31.getTemperature();
+      Serial.println(heatElementValue);
 
       //check if it is time to print temperature value
       unsigned long currentMillis = millis();
@@ -101,8 +105,6 @@ void loop() {
         temperatureCharacteristic.writeValue(temp);
       }
 
-      // read heatElementCharacteristic value and set heating element
-      setHeatElement();
     }
 
     // when the central disconnects:
