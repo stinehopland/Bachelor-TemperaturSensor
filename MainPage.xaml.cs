@@ -24,6 +24,7 @@ using Windows.UI.Text.Core;
 using System.Threading;
 using Windows.UI.Xaml.Documents;
 using Windows.Security.Authentication.Web.Provider;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -41,7 +42,8 @@ namespace BLE_program
     public sealed partial class MainPage : Page
     {
         private BluetoothLEDevice bluetoothLeDevice = null;
-        private GattCharacteristic selectedCharacteristic;
+        private GattCharacteristic temperatureCharacteristic;
+        private GattCharacteristic statusCharacteristic;
 
         //only one characteristic at a time
         private GattCharacteristic registeredCharacteristic;
@@ -51,7 +53,7 @@ namespace BLE_program
         readonly int E_BLUETOOTH_ATT_WRITE_NOT_PERMITTED = unchecked((int)0x80650003);
         readonly int E_BLUETOOTH_ATT_INVALID_PDU = unchecked((int)0x80650004);
         readonly int E_ACCESSDENIED = unchecked((int)0x80070005);
-        readonly int E_DEVICE_NOT_AVAILABLE = unchecked((int)0x800710df);
+        //readonly int E_DEVICE_NOT_AVAILABLE = unchecked((int)0x800710df);
 
         public string SelectedBleDeviceId;
         public string SelectedBleDeviceName = "No device selected";
@@ -376,8 +378,28 @@ namespace BLE_program
                             var temperatureInCelsiusCharacteristic = characteristicResult.Characteristics.FirstOrDefault();
                             if (temperatureInCelsiusCharacteristic != null)
                             {
-                                selectedCharacteristic = temperatureInCelsiusCharacteristic;
+                                temperatureCharacteristic = temperatureInCelsiusCharacteristic;
                                 NotifyUser("Connected to TemperatureInCelsius characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+                            }
+                            else
+                            {
+                                NotifyUser("characteristic not found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                            }
+                        }
+                        else
+                        {
+                            NotifyUser("Error accessing characteristic", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                        }
+
+                        //Get the alertstatus characteristic
+                        var statusResult = await SelectedGattService.GetCharacteristicsForUuidAsync(GattCharacteristicUuids.AlertStatus, BluetoothCacheMode.Uncached);
+                        if (statusResult != null)
+                        {
+                            var boolCharacteristic = statusResult.Characteristics.FirstOrDefault();
+                            if (boolCharacteristic != null)
+                            {
+                                statusCharacteristic = boolCharacteristic;
+                                NotifyUser("Connected to Alert Status characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
                             }
                             else
                             {
@@ -443,7 +465,7 @@ namespace BLE_program
                     // BT_Code: Read the actual value from the device by using Uncached.
                     while (!token.IsCancellationRequested)
                     {
-                        GattReadResult result = await selectedCharacteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
+                        GattReadResult result = await temperatureCharacteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
                         if (result.Status == GattCommunicationStatus.Success)
                         {
                             string formattedResult = FormatValueByPresentation(result.Value, presentationFormat);
@@ -478,12 +500,13 @@ namespace BLE_program
             }
         }
 
+        // Funksjonene under skal muligens brukes i forbindelse med regulering
         private async Task<bool> WriteBufferToSelectedCharacteristicAsync(IBuffer buffer)
         {
             try
             {
                 // BT_Code: Writes the value from the buffer to the characteristic.
-                var result = await selectedCharacteristic.WriteValueWithResultAsync(buffer);
+                var result = await statusCharacteristic.WriteValueWithResultAsync(buffer);
 
                 if (result.Status == GattCommunicationStatus.Success)
                 {
@@ -520,7 +543,7 @@ namespace BLE_program
                 () => CharacteristicLatestValue.Text = message);
         }
 
-
+       
         private string FormatValueByPresentation(IBuffer buffer, GattPresentationFormat format)
         {
             // BT_Code: For the purpose of this sample, this function converts only UInt32 and
@@ -552,7 +575,7 @@ namespace BLE_program
             else if (data != null)
             {
                 // This is our custom calc service Result UUID. Format it like an Int
-                if (selectedCharacteristic.Uuid.Equals(Constants.ResultCharacteristicUuid))
+                if (temperatureCharacteristic.Uuid.Equals(Constants.ResultCharacteristicUuid))
                 {
                     return BitConverter.ToDouble(data, 0).ToString();
                 }
@@ -629,7 +652,24 @@ namespace BLE_program
                     HeatElement = false;
                     NotifyUser($"Current temperature is within 1 degree celsius of set temperature.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
                 }
-                HeatElement = Difference > 1;
+
+                //Write HeatElement value to alertstatus characteristic
+                if (statusCharacteristic!= null && statusCharacteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Write))
+                {
+                    GattCommunicationStatus status = await statusCharacteristic.WriteValueAsync(new[]
+                    {
+                         (byte)(HeatElement ? 1 : 0)
+                    }.AsBuffer());
+
+                    if (status == GattCommunicationStatus.Success)
+                    {
+                        NotifyUser("Alert status value written successfully", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+                    }
+                    else
+                    {
+                        NotifyUser($"Error writing alert status value. Status: {status}", NotifyType.ErrorMessage, StatusBlockRegulator, StatusBorderRegulator);
+                    }
+                }
                 await Task.Delay(1000);
             }
         }
@@ -650,7 +690,7 @@ namespace BLE_program
             await Task.Run(() => CompareTemperatureAndControlHeatingElement());
         }
 
-        private void StopComparing_Click(object sender, RoutedEventArgs e)
+            private void StopComparing_Click(object sender, RoutedEventArgs e)
         {
             cts2.Cancel();
             NotifyUser($"Temperature regulating stopped", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
