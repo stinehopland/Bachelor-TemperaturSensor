@@ -13,7 +13,7 @@
 BLEService temperatureService("180A"); //BLE LED Service: Device information service
 
 BLEFloatCharacteristic temperatureCharacteristic("2A1C", BLERead); // BLE temperature Characteristic: Temperature measurement
-BLEBooleanCharacteristic heatElementCharacteristic("2A3F", BLERead | BLEWrite); // BLE Characteristic for Heat Element: Alert Status (On or off)
+BLEBooleanCharacteristic heatElementCharacteristic("2A3F", BLEWrite); // BLE Characteristic for Heat Element: Alert Status (On or off)
 
 float temp = 0;
 const int HEATING_ELEMENT_PIN = 27; // replace with the pin used to control the heating element
@@ -26,7 +26,9 @@ SHT31 sht31 = SHT31();
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
-  
+
+  // set Heating Element and built in LED pin to output mode
+  pinMode(HEATING_ELEMENT_PIN, OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
   
   Serial.println("Begynn...");
@@ -49,6 +51,9 @@ void setup() {
   BLE.setLocalName("Nano 33 BLE");
   BLE.setAdvertisedService(temperatureService); 
 
+  // set security settings for the characteristic
+  // heatElementCharacteristic.setSecurity(BLE_SECURITY_MODE_ENCRYPT_NO_MITM);
+
   // add the characteristics of the service
   temperatureService.addCharacteristic(temperatureCharacteristic);
   temperatureService.addCharacteristic(heatElementCharacteristic);
@@ -56,7 +61,7 @@ void setup() {
   // add service
   BLE.addService(temperatureService);
   
-  heatElementCharacteristic.writeValue(false);
+  heatElementCharacteristic.writeValue(0);
 
   // start advertising
   BLE.advertise();
@@ -85,17 +90,19 @@ void loop() {
     while(central.connected()){
       boolean heatElementValue = heatElementCharacteristic.value();
       
-      if (heatElementValue) {
-      // turn on heating element
-      digitalWrite(HEATING_ELEMENT_PIN, HIGH);
+      if (heatElementCharacteristic.written()) {
+        if (heatElementCharacteristic.value()){  //any value other than 0
+          Serial.println("Heat Element ON");
+          digitalWrite(HEATING_ELEMENT_PIN, HIGH);  //turn on heating element
+        }
+        else {
+          Serial.println("Heat Element OFF");
+          digitalWrite(HEATING_ELEMENT_PIN, LOW); // turn off heating element
+        }
       } 
-      else {
-      // turn off heating element
-      digitalWrite(HEATING_ELEMENT_PIN, LOW);
-      }
       
       temp = sht31.getTemperature();
-      Serial.println(heatElementValue);
+      //Serial.println(heatElementValue);
 
       //check if it is time to print temperature value
       unsigned long currentMillis = millis();
