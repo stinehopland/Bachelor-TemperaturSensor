@@ -13,7 +13,7 @@
 BLEService temperatureService("180A"); //BLE LED Service: Device information service
 
 BLEFloatCharacteristic temperatureCharacteristic("2A1C", BLERead); // BLE temperature Characteristic: Temperature measurement
-BLEBooleanCharacteristic heatElementCharacteristic("2A3F", BLEWriteWithoutResponse); // BLE Characteristic for Heat Element: Alert Status (On or off)
+BLEBooleanCharacteristic heatElementCharacteristic("2902", BLEWriteWithoutResponse); // BLE Characteristic for Heat Element: Alert Status (On or off)
 
 float temp = 0;
 const int HEATING_ELEMENT_PIN = 27; // replace with the pin used to control the heating element
