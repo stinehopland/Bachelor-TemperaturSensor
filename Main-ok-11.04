@@ -20,7 +20,8 @@ using Windows.Storage;
 using System.Linq;
 using System.Threading;
 
-// The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
+//This code has taken elements from scenario1 & scenario2 of the microsoft sample code.
+//Referance: https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/bluetoothle/
 
 namespace BLE_program
 {
@@ -29,9 +30,6 @@ namespace BLE_program
         StatusMessage,
         ErrorMessage
     };
-
-    //This code has taken elements from scenario1 & scenario2 of the microsoft sample code.
-    //Referance: https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/bluetoothle/
 
     public sealed partial class MainPage : Page
     {
