@@ -7,34 +7,11 @@
     xmlns:local="using:BLE_program"
     mc:Ignorable="d">
 
-    <Page.Resources>
-        <DataTemplate x:Key="ResultsListViewTemplate" x:DataType="local:BluetoothLEDeviceDisplay">
-            <Grid Margin="5">
-                <StackPanel Grid.Column="1" Margin="5">
-                    <TextBlock TextWrapping="WrapWholeWords">
-                        Name: <Run Text="{x:Bind Name, Mode=OneWay}" FontWeight="Bold"/>
-                    </TextBlock>
-                    <TextBlock>
-                        IsConnected: <Run Text="{x:Bind IsConnected, Mode=OneWay}"/>, IsConnectable:<Run Text="{x:Bind IsConnectable, Mode=OneWay}"/>
-                    </TextBlock>
-                </StackPanel>
-            </Grid>
-        </DataTemplate>
-    </Page.Resources>
-
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Padding="12,10,12,12">
         <TextBlock x:Name="NAVN" HorizontalAlignment="Left" Margin="10,34,0,0" TextWrapping="WrapWholeWords" VerticalAlignment="Top" Width="426" FontSize="24" FontWeight="Bold"><Run Text="Connect to Arduino Nano 33 "/><Run Text="BLE"/></TextBlock>
         <StackPanel Margin="10,83,206,33">
-            <StackPanel Orientation="Horizontal" Width="638" Height="60" HorizontalAlignment="Left">
-                <Button x:Name="EnumerateButton" Content="Find Device" Click="{x:Bind Path=EnumerateButton_Click}" Margin="0,0,10,0"/>
-            </StackPanel>
-            <ListView x:Name="ResultsListView"
-                          ItemTemplate="{StaticResource ResultsListViewTemplate}"
-                          ItemsSource="{x:Bind Mode=OneWay, Path=KnownDevices}" Height="82" Width="500" Margin="0,10,0,0" HorizontalAlignment="Left"/>
-            <TextBlock TextWrapping="Wrap" Margin="0,10,0,0"><Run Text="Selected device: "/><Run x:Name="SelectedDeviceRun" FontWeight="Bold"/></TextBlock>
-            <Button x:Name="ConnectButton" Content="Connect" Click="{x:Bind Path=ConnectButton_Click}" Margin="0,10,0,0"/>
             <StackPanel Orientation="Horizontal">
-                <Button x:Name="CharacteristicReadButton" Content="Start" Click="{x:Bind Path=CharacteristicReadButton_Click}"
+                <Button x:Name="ConnectandReadButton" Content="Run" Click="{x:Bind Path=ConnectandReadButton_Click}"
                         Visibility="Visible" Margin="0,10,10,0"/>
                 <Button x:Name="StopButton" Content="Stop" Margin="0,10,10,0" Click="StopButton_Click"/>
             </StackPanel>
