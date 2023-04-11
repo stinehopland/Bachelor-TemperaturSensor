@@ -44,10 +44,10 @@ namespace BLE_program
         private GattPresentationFormat presentationFormat;
 
         //Error codes
-        readonly int E_BLUETOOTH_ATT_WRITE_NOT_PERMITTED = unchecked((int)0x80650003);
-        readonly int E_BLUETOOTH_ATT_INVALID_PDU = unchecked((int)0x80650004);
-        readonly int E_ACCESSDENIED = unchecked((int)0x80070005);
-        readonly int E_DEVICE_NOT_AVAILABLE = unchecked((int)0x800710df);
+        //readonly int E_BLUETOOTH_ATT_WRITE_NOT_PERMITTED = unchecked((int)0x80650003);
+        //readonly int E_BLUETOOTH_ATT_INVALID_PDU = unchecked((int)0x80650004);
+        //readonly int E_ACCESSDENIED = unchecked((int)0x80070005);
+        //readonly int E_DEVICE_NOT_AVAILABLE = unchecked((int)0x800710df);
 
         public string SelectedBleDeviceId;
         public string SelectedBleDeviceName = "No device selected";
@@ -75,8 +75,7 @@ namespace BLE_program
         {
             InitializeComponent();
 
-            ConnectButton.IsEnabled = true;
-            CharacteristicReadButton.IsEnabled = false;
+            ConnectandReadButton.IsEnabled = true;
             StopButton.IsEnabled = false;
             StartComparing.IsEnabled = false;
             StopComparing.IsEnabled = false;
@@ -201,8 +200,6 @@ namespace BLE_program
                     {
                         if (deviceInfo.Name == "Nano 33 BLE")
                         {
-                            ConnectButton.IsEnabled = true;
-
                             if (FindBluetoothLEDeviceDisplay(deviceInfo.Id) == null)
                             {
                                 if (deviceInfo.Name != string.Empty)
@@ -303,16 +300,39 @@ namespace BLE_program
             });
         }
 
-        //Connect Button 
-        private async void ConnectButton_Click()
+        private async Task<GattCharacteristic> GetCharacteristicAsync(GattDeviceService service, string uuidString, GattCharacteristicProperties properties)
         {
-            ConnectButton.IsEnabled = false;
+            Guid uuid = Guid.Parse(uuidString);
+            var result = await service.GetCharacteristicsForUuidAsync(uuid, BluetoothCacheMode.Uncached);
+            if (result.Status == GattCommunicationStatus.Success && result.Characteristics.Count > 0)
+            {
+                var characteristic = result.Characteristics.FirstOrDefault(c => c.CharacteristicProperties.HasFlag(properties));
+                return characteristic;
+            }
+            return null;
+        }
+
+        private async Task<GattCharacteristic> GetCharacteristicAsync(GattDeviceService service, Guid uuid, GattCharacteristicProperties properties)
+        {
+            var result = await service.GetCharacteristicsForUuidAsync(uuid, BluetoothCacheMode.Uncached);
+            if (result.Status == GattCommunicationStatus.Success && result.Characteristics.Count > 0)
+            {
+                var characteristic = result.Characteristics.FirstOrDefault(c => c.CharacteristicProperties.HasFlag(properties));
+                return characteristic;
+            }
+            return null;
+        }
+
+
+        //This method is called when a user clicks the UI button named 'ConnectandReadButton'
+        private async void ConnectandReadButton_Click()
+        {
             StartBleDeviceWatcher();
-            NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage, StatusBlock, StatusBorder);
 
             // Wait for a "Nano 33 BLE" device to be found
             while (SelectedBleDeviceId == null)
             {
+                NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage, StatusBlock, StatusBorder);
                 await Task.Delay(1000);
                 foreach (var device in KnownDevices)
                 {
@@ -341,8 +361,6 @@ namespace BLE_program
             }
 
             SelectedGattService = result.Services[0];
-            NotifyUser("Connected to Custom service", NotifyType.StatusMessage, StatusBlock, StatusBorder);
-
             heatingelementCharacteristic = await GetCharacteristicAsync(SelectedGattService, "be3764b5-bcff-4e5c-a55b-ca698ef3cab7", GattCharacteristicProperties.WriteWithoutResponse);
             if (heatingelementCharacteristic == null)
             {
@@ -350,7 +368,7 @@ namespace BLE_program
             }
             else
             {
-                NotifyUser("Connected to Heating Element characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+                //NotifyUser("Connected to Heating Element characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
             }
 
             temperatureCharacteristic = await GetCharacteristicAsync(SelectedGattService, GattCharacteristicUuids.TemperatureMeasurement, GattCharacteristicProperties.Read);
@@ -360,40 +378,10 @@ namespace BLE_program
             }
             else
             {
-                NotifyUser("Connected to Temperature Measurement characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+                //NotifyUser("Connected to Temperature Measurement characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
             }
 
-            ConnectButton.Content = "Connected";
-            CharacteristicReadButton.IsEnabled = true;
-        }
-
-        private async Task<GattCharacteristic> GetCharacteristicAsync(GattDeviceService service, string uuidString, GattCharacteristicProperties properties)
-        {
-            Guid uuid = Guid.Parse(uuidString);
-            var result = await service.GetCharacteristicsForUuidAsync(uuid, BluetoothCacheMode.Uncached);
-            if (result.Status == GattCommunicationStatus.Success && result.Characteristics.Count > 0)
-            {
-                var characteristic = result.Characteristics.FirstOrDefault(c => c.CharacteristicProperties.HasFlag(properties));
-                return characteristic;
-            }
-            return null;
-        }
-
-        private async Task<GattCharacteristic> GetCharacteristicAsync(GattDeviceService service, Guid uuid, GattCharacteristicProperties properties)
-        {
-            var result = await service.GetCharacteristicsForUuidAsync(uuid, BluetoothCacheMode.Uncached);
-            if (result.Status == GattCommunicationStatus.Success && result.Characteristics.Count > 0)
-            {
-                var characteristic = result.Characteristics.FirstOrDefault(c => c.CharacteristicProperties.HasFlag(properties));
-                return characteristic;
-            }
-            return null;
-        }
-
-
-        //This method is called when a user clicks the UI button named 'CharacteristicReadButton'
-        private async void CharacteristicReadButton_Click()
-        {
+        
             if (isReading)
             {
                 return;
@@ -411,7 +399,7 @@ namespace BLE_program
             {
                 // enable the stop button and disable the read button
                 StopButton.IsEnabled = true;
-                CharacteristicReadButton.IsEnabled = false;
+                ConnectandReadButton.IsEnabled = false;
 
                 isReading = true;
 
@@ -423,10 +411,10 @@ namespace BLE_program
                     // BT_Code: Read the actual value from the device by using Uncached.
                     while (!token.IsCancellationRequested)
                     {
-                        GattReadResult result = await temperatureCharacteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
-                        if (result.Status == GattCommunicationStatus.Success)
+                        GattReadResult readResult = await temperatureCharacteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
+                        if (readResult.Status == GattCommunicationStatus.Success)
                         {
-                            string formattedResult = FormatValueByPresentation(result.Value, presentationFormat);
+                            string formattedResult = FormatValueByPresentation(readResult.Value, presentationFormat);
 
                             //add timestamp
                             string valueWithTimeStamp = $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")} - {formattedResult}";
@@ -451,7 +439,7 @@ namespace BLE_program
                 finally
                 {
                     isReading = false;
-                    CharacteristicReadButton.IsEnabled = true;
+                    ConnectandReadButton.IsEnabled = true;
                     StopButton.IsEnabled = false;
                 }
                 StopButton.IsEnabled = true;
@@ -489,7 +477,7 @@ namespace BLE_program
             }
 
             isReading = false;
-            CharacteristicReadButton.IsEnabled = true;
+            ConnectandReadButton.IsEnabled = true;
             StopButton.IsEnabled = false;
 
             // Cancel the reading loop
@@ -514,14 +502,14 @@ namespace BLE_program
                 if (Difference >= 1)
                 {
                     HeatElement = true;
-                    NotifyUser($"Set temperature is higher than current temperature. Heating element turned on.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+                    NotifyUser($"Set temperature > current temperature. Heating element: ON", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
                     byte[] value = new byte[] { 0x01 };
                     await WriteToStatusCharacteristicAsync(value);
                 }
                 else if (Difference <= -1)
                 {
                     HeatElement = false;
-                    NotifyUser($"Set temperature is lower than current temperature. Heating element turned off.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+                    NotifyUser($"Set temperature < current temperature. Heating element: OFF", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
                     byte[] value = new byte[] { 0x00 };
                     await WriteToStatusCharacteristicAsync(value);
                 }
