@@ -1,0 +1,637 @@
+using System;
+using System.IO;
+using System.Text;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using Windows.Devices.Bluetooth;
+using Windows.Devices.Enumeration;
+using Windows.Devices.Bluetooth.GenericAttributeProfile;
+using Windows.Security.Cryptography;
+using Windows.Storage.Streams;
+using Windows.UI.Core;
+using Windows.UI.Xaml;
+using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Automation.Peers;
+using Windows.UI.Xaml.Media;
+using System.Threading.Tasks;
+using Windows.Storage.Pickers;
+using Windows.Storage;
+using System.Linq;
+using System.Threading;
+
+// The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
+
+namespace BLE_program
+{
+    public enum NotifyType
+    {
+        StatusMessage,
+        ErrorMessage
+    };
+
+    //This code has taken elements from scenario1 & scenario2 of the microsoft sample code.
+    //Referance: https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/bluetoothle/
+
+    public sealed partial class MainPage : Page
+    {
+        private BluetoothLEDevice bluetoothLeDevice = null;
+        private GattCharacteristic temperatureCharacteristic;
+        private GattCharacteristic heatingelementCharacteristic;
+
+        //only one characteristic at a time
+        private GattCharacteristic registeredCharacteristic;
+        private GattPresentationFormat presentationFormat;
+
+        //Error codes
+        readonly int E_BLUETOOTH_ATT_WRITE_NOT_PERMITTED = unchecked((int)0x80650003);
+        readonly int E_BLUETOOTH_ATT_INVALID_PDU = unchecked((int)0x80650004);
+        readonly int E_ACCESSDENIED = unchecked((int)0x80070005);
+        readonly int E_DEVICE_NOT_AVAILABLE = unchecked((int)0x800710df);
+
+        public string SelectedBleDeviceId;
+        public string SelectedBleDeviceName = "No device selected";
+
+        public float TemperatureSetValue;
+        public float CurrentTemperature;
+        public float Difference;
+
+        public bool HeatElement;
+
+        private ObservableCollection<BluetoothLEDeviceDisplay> KnownDevices = new ObservableCollection<BluetoothLEDeviceDisplay>();
+        private List<DeviceInformation> UnknownDevices = new List<DeviceInformation>();
+
+        private DeviceWatcher deviceWatcher;
+
+        public GattDeviceService SelectedGattService { get; private set; }
+
+        private bool isReading = false;
+        private StreamWriter writer;
+        private CancellationTokenSource cts;
+        private CancellationTokenSource cts2;
+
+
+        public MainPage()
+        {
+            InitializeComponent();
+
+            ConnectButton.IsEnabled = false;
+            CharacteristicReadButton.IsEnabled = false;
+            StopButton.IsEnabled = false;
+            StartComparing.IsEnabled = false;
+            StopComparing.IsEnabled = false;
+        }
+
+        ////Display a message to the user.
+        public void NotifyUser(string strMessage, NotifyType type, TextBlock targetBlock, Border targetBorder)
+        {
+            // If called from the UI thread, then update immediately.
+            // Otherwise, schedule a task on the UI thread to perform the update.
+            if (Dispatcher.HasThreadAccess)
+            {
+                UpdateStatus(strMessage, type, targetBlock, targetBorder);
+            }
+            else
+            {
+                var task = Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () => UpdateStatus(strMessage, type, targetBlock, targetBorder));
+            }
+        }
+
+        private void UpdateStatus(string strMessage, NotifyType type, TextBlock targetBlock, Border targetBorder)
+        {
+            switch (type)
+            {
+                case NotifyType.StatusMessage:
+                    targetBorder.Background = new SolidColorBrush(Windows.UI.Colors.Green);
+                    break;
+                case NotifyType.ErrorMessage:
+                    targetBorder.Background = new SolidColorBrush(Windows.UI.Colors.Red);
+                    break;
+            }
+
+            targetBlock.Text = strMessage;
+
+            // Collapse the target block if it has no text to conserve real estate.
+            targetBlock.Visibility = (targetBlock.Text != String.Empty) ? Visibility.Visible : Visibility.Collapsed;
+
+            // Raise an event if necessary to enable a screen reader to announce the status update.
+            var peer = FrameworkElementAutomationPeer.FromElement(targetBlock);
+            peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+        }
+
+
+        //This method is called when a user clicks on the enumerate button. 
+        //If the BLE watcher is not running, the method starts, and the text changes to "Stop Enumerating"
+        private void EnumerateButton_Click()
+        {
+            if (deviceWatcher == null)
+            {
+                StartBleDeviceWatcher();
+                EnumerateButton.Content = "Stop enumerating";
+                NotifyUser($"Device watcher started.", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+            }
+            else
+            {
+                StopBleDeviceWatcher();
+                EnumerateButton.Content = "Start enumerating";
+                NotifyUser($"Device watcher stopped.", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+            }
+        }
+
+        private void StartEnumerater()
+        {
+            if (deviceWatcher == null)
+            {
+                StartBleDeviceWatcher();
+                NotifyUser($"Device watcher started.", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+            }
+        }
+
+        private bool Not(bool value) => !value;
+
+        //This method starts a device watcher that looks for all nearby Bluetooth devices.
+        private void StartBleDeviceWatcher()
+        {
+            // Additional properties we would like about the device.
+            // Property strings are documented here https://msdn.microsoft.com/en-us/library/windows/desktop/ff521659(v=vs.85).aspx
+            string[] requestedProperties = { "System.Devices.Aep.DeviceAddress", "System.Devices.Aep.IsConnected", "System.Devices.Aep.Bluetooth.Le.IsConnectable" };
+
+            var nano33BLEFilter = BluetoothLEDevice.GetDeviceSelectorFromDeviceName("Nano 33 BLE");
+            deviceWatcher = DeviceInformation.CreateWatcher(
+                nano33BLEFilter,
+                requestedProperties,
+                DeviceInformationKind.AssociationEndpoint);
+
+            //Register eventhandlers before starting the watcher
+            deviceWatcher.Added += DeviceWatcher_Added;
+            deviceWatcher.Updated += DeviceWatcher_Updated;
+            deviceWatcher.Removed += DeviceWatcher_Removed;
+            deviceWatcher.EnumerationCompleted += DeviceWatcher_EnumerationCompleted;
+            deviceWatcher.Stopped += DeviceWatcher_Stopped;
+
+            //Start over with an empty collection
+            KnownDevices.Clear();
+
+            //Start the watcher. Active enumeration last for approximately 30s.
+            deviceWatcher.Start();
+        }
+
+        //Stops watching for all nearby Bluetooth devices
+        private void StopBleDeviceWatcher()
+        {
+            if (deviceWatcher != null)
+            {
+                //Unregister the event handlers
+                deviceWatcher.Added -= DeviceWatcher_Added;
+                deviceWatcher.Updated -= DeviceWatcher_Updated;
+                deviceWatcher.Removed -= DeviceWatcher_Removed;
+                deviceWatcher.EnumerationCompleted -= DeviceWatcher_EnumerationCompleted;
+                deviceWatcher.Stopped -= DeviceWatcher_Stopped;
+
+                //Stop the watcher
+                deviceWatcher.Stop();
+                deviceWatcher = null;
+            }
+        }
+
+        private BluetoothLEDeviceDisplay FindBluetoothLEDeviceDisplay(string id)
+        {
+            foreach (BluetoothLEDeviceDisplay bleDeviceDisplay in KnownDevices)
+            {
+                if (bleDeviceDisplay.Id == id)
+                {
+                    return bleDeviceDisplay;
+                }
+            }
+            return null;
+        }
+        private DeviceInformation FindUnknownDevices(string id)
+        {
+            foreach (DeviceInformation bleDeviceInfo in UnknownDevices)
+            {
+                if (bleDeviceInfo.Id == id)
+                {
+                    return bleDeviceInfo;
+                }
+            }
+            return null;
+        }
+
+        //This method is called when a BLE device is discovered by a DeviceWatcher object.
+        private async void DeviceWatcher_Added(DeviceWatcher sender, DeviceInformation deviceInfo)
+        {
+            //Updates the UI thread with info about a newly discovered BLE device
+            await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+            {
+                lock (this)
+                {
+                    if (sender == deviceWatcher)
+                    {
+                        if (deviceInfo.Name == "Nano 33 BLE")
+                        {
+                            ConnectButton.IsEnabled = true;
+
+                            if (FindBluetoothLEDeviceDisplay(deviceInfo.Id) == null)
+                            {
+                                if (deviceInfo.Name != string.Empty)
+                                {
+                                    KnownDevices.Add(new BluetoothLEDeviceDisplay(deviceInfo));
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        //Defines the event handler for DeviceWatcher.Updated, which is raised if the BLE devices properties have been updated.
+        private async void DeviceWatcher_Updated(DeviceWatcher sender, DeviceInformationUpdate deviceInfoUpdate)
+        {
+            // Updates the UI thread because the collection is databound to a UI element.
+            await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+            {
+                lock (this)
+                {
+                    if (sender == deviceWatcher)
+                    {
+                        BluetoothLEDeviceDisplay bleDeviceDisplay = FindBluetoothLEDeviceDisplay(deviceInfoUpdate.Id);
+                        if (bleDeviceDisplay != null)
+                        {
+                            // Device is already being displayed - update UX.
+                            bleDeviceDisplay.Update(deviceInfoUpdate);
+                            return;
+                        }
+
+                        DeviceInformation deviceInfo = FindUnknownDevices(deviceInfoUpdate.Id);
+                        if (deviceInfo != null)
+                        {
+                            deviceInfo.Update(deviceInfoUpdate);
+                            // If device has been updated with a friendly name it's no longer unknown.
+                            if (deviceInfo.Name != String.Empty)
+                            {
+                                KnownDevices.Add(new BluetoothLEDeviceDisplay(deviceInfo));
+                                UnknownDevices.Remove(deviceInfo);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+
+        //This method handles the DeviceWatcher.Removed event, which is raised when a BLE device is no longer available.
+        private async void DeviceWatcher_Removed(DeviceWatcher sender, DeviceInformationUpdate deviceInfoUpdate)
+        {
+            // Updates the UI thread because the collection is databound to a UI element.
+            await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+            {
+                lock (this)
+                {
+                    if (sender == deviceWatcher)
+                    {
+                        // Find the corresponding DeviceInformation in the collection and remove it.
+                        BluetoothLEDeviceDisplay bleDeviceDisplay = FindBluetoothLEDeviceDisplay(deviceInfoUpdate.Id);
+                        if (bleDeviceDisplay != null)
+                        {
+                            KnownDevices.Remove(bleDeviceDisplay);
+                        }
+
+                        DeviceInformation deviceInfo = FindUnknownDevices(deviceInfoUpdate.Id);
+                        if (deviceInfo != null)
+                        {
+                            UnknownDevices.Remove(deviceInfo);
+                        }
+                    }
+                }
+            });
+        }
+
+        private async void DeviceWatcher_EnumerationCompleted(DeviceWatcher sender, object e)
+        {
+            // Updates the UI thread because the collection is databound to a UI element.
+            await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+            {
+                if (sender == deviceWatcher)
+                {
+                    //Enumeration completed
+                }
+            });
+        }
+
+        private async void DeviceWatcher_Stopped(DeviceWatcher sender, object e)
+        {
+            //Update the UI thread
+            await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+            {
+                if (sender == deviceWatcher)
+                {
+                    NotifyUser($"No longer watching for devices.",
+                        sender.Status == DeviceWatcherStatus.Aborted ? NotifyType.ErrorMessage : NotifyType.StatusMessage, StatusBlock, StatusBorder);
+                }
+            });
+        }
+
+        //Connect Button 
+        private async void ConnectButton_Click()
+        {
+            StopBleDeviceWatcher();
+            EnumerateButton.Content = "Enumerating stopped";
+            EnumerateButton.IsEnabled = false;
+            ConnectButton.IsEnabled = false;
+
+            NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+
+            var bleDeviceDisplay = ResultsListView.SelectedItem as BluetoothLEDeviceDisplay;
+
+            if (bleDeviceDisplay != null)
+            {
+                SelectedBleDeviceId = bleDeviceDisplay.Id;
+                SelectedBleDeviceName = bleDeviceDisplay.Name;
+            }
+            try
+            {
+                bluetoothLeDevice = await BluetoothLEDevice.FromIdAsync(SelectedBleDeviceId);
+            }
+            catch
+            {
+                if (bluetoothLeDevice == null)
+                {
+                    NotifyUser("Select the Arduino", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                }
+            }
+
+
+            if (bluetoothLeDevice != null)
+            {
+                string customServiceUuidString = "707c54e2-aff4-40ea-b80f-4ec2339425d3";
+                Guid customServiceUuid = Guid.Parse(customServiceUuidString);
+                GattDeviceServicesResult result = await bluetoothLeDevice.GetGattServicesForUuidAsync(customServiceUuid, BluetoothCacheMode.Uncached);
+                if (result.Status == GattCommunicationStatus.Success)
+                {
+                    var customService = result.Services.FirstOrDefault();
+                    if (customService != null)
+                    {
+                        SelectedGattService = customService;
+                        NotifyUser("Connected to Custom service", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+
+                        // Get the device ID
+                        Debug.WriteLine($"Device ID: {bluetoothLeDevice.DeviceId}");
+
+                        // Get the service UUID
+                        Debug.WriteLine($"Service UUID: {SelectedGattService.Uuid}");
+
+                        //Get the alertstatus and temperature characteristics
+                        string heatingElementCharacteristicString = "be3764b5-bcff-4e5c-a55b-ca698ef3cab7";
+                        Guid heatingElementCharacteristic = Guid.Parse(heatingElementCharacteristicString);
+
+                        var characteristicsResult = await SelectedGattService.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
+                        if (characteristicsResult.Status == GattCommunicationStatus.Success)
+                        {
+                            var characteristics = characteristicsResult.Characteristics;
+                            if (characteristics != null && characteristics.Count > 0)
+                            {
+                                foreach (var characteristic in characteristics)
+                                {
+                                    if (characteristic.Uuid == heatingElementCharacteristic)
+                                    {
+                                        if (characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.WriteWithoutResponse))
+                                        {
+                                            Debug.WriteLine("supports writing");
+                                        }
+                                        heatingelementCharacteristic = characteristic;
+                                        NotifyUser("Connected to Heating Element characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+                                    }
+                                    else if (characteristic.Uuid == GattCharacteristicUuids.TemperatureMeasurement)
+                                    {
+                                        if (characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Read))
+                                        {
+                                            Debug.WriteLine("supports reading");
+                                        }
+                                        temperatureCharacteristic = characteristic;
+                                        NotifyUser("Connected to Temperature Measurement characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                NotifyUser("No characteristics found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                            }
+                        }
+                        else
+                        {
+                            NotifyUser("Error accessing characteristics", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                        }
+                    }
+                    else
+                    {
+                        NotifyUser("Custom Service not found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                    }
+                    ConnectButton.Content = "Connected";
+                }
+                else
+                {
+                    NotifyUser("Device unreachable", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                }
+            }
+            CharacteristicReadButton.IsEnabled = true;
+        }
+
+        //This method is called when a user clicks the UI button named 'CharacteristicReadButton'
+        private async void CharacteristicReadButton_Click()
+        {
+            if (isReading)
+            {
+                return;
+            }
+
+            // Get the suggested start location
+            StorageFolder folder = KnownFolders.DocumentsLibrary;
+
+            // Create the file with the desired name and path
+            string fileName = $"{DateTime.Now.ToString("ddMMyy_HHmmss")}.txt";
+            StorageFile file = await folder.CreateFileAsync(fileName, CreationCollisionOption.ReplaceExisting);
+
+            //Open the stream for writing
+            using (StreamWriter writer = new StreamWriter(await file.OpenStreamForWriteAsync()))
+            {
+                // enable the stop button and disable the read button
+                StopButton.IsEnabled = true;
+                CharacteristicReadButton.IsEnabled = false;
+
+                isReading = true;
+
+                cts = new CancellationTokenSource();
+                CancellationToken token = cts.Token;
+
+                try
+                {
+                    // BT_Code: Read the actual value from the device by using Uncached.
+                    while (!token.IsCancellationRequested)
+                    {
+                        GattReadResult result = await temperatureCharacteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
+                        if (result.Status == GattCommunicationStatus.Success)
+                        {
+                            string formattedResult = FormatValueByPresentation(result.Value, presentationFormat);
+
+                            //add timestamp
+                            string valueWithTimeStamp = $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")} - {formattedResult}";
+
+                            await writer.WriteLineAsync(valueWithTimeStamp);
+                            await writer.FlushAsync();
+
+                            NotifyUser($"Read result: {formattedResult}", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+                        }
+                        else
+                        {
+                            NotifyUser($"Read failed: {result.Status}", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                        }
+                        await Task.Delay(1000, token);
+                        StartComparing.IsEnabled = true;
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                    //The task was canceled
+                }
+                finally
+                {
+                    isReading = false;
+                    CharacteristicReadButton.IsEnabled = true;
+                    StopButton.IsEnabled = false;
+                }
+                StopButton.IsEnabled = true;
+            }
+        }
+
+        private string FormatValueByPresentation(IBuffer buffer, GattPresentationFormat format)
+        {
+            // BT_Code: For the purpose of this sample, this function converts only UInt32 and
+            // UTF-8 buffers to readable text. It can be extended to support other formats if your app needs them.
+            CryptographicBuffer.CopyToByteArray(buffer, out byte[] data);
+            if (data != null)
+            {
+                try
+                {
+                    CurrentTemperature = BitConverter.ToSingle(data, 0);
+                    return "Temperatur = " + CurrentTemperature + " Grader Celsius";
+                }
+                catch (ArgumentException)
+                {
+                    return "Unknown format";
+                }
+            }
+            else
+            {
+                return "Empty data received";
+            }
+        }
+
+        private void StopButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!isReading)
+            {
+                return;
+            }
+
+            isReading = false;
+            CharacteristicReadButton.IsEnabled = true;
+            StopButton.IsEnabled = false;
+
+            // Cancel the reading loop
+            cts.Cancel();
+
+            // Dispose of the StreamWriter object if it exists
+            if (writer != null)
+            {
+                writer.Dispose();
+            }
+
+            NotifyUser("Stopped reading temperature values and closed file", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+        }
+
+        private async Task CompareTemperatureAndControlHeatingElement()
+        {
+
+            while (!cts2.IsCancellationRequested)
+            {
+                Difference = TemperatureSetValue - CurrentTemperature;
+
+                if (Difference >= 1)
+                {
+                    HeatElement = true;
+                    NotifyUser($"Set temperature is higher than current temperature. Heating element turned on.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+                    byte[] value = new byte[] { 0x01 };
+                    await WriteToStatusCharacteristicAsync(value);
+                }
+                else if (Difference <= -1)
+                {
+                    HeatElement = false;
+                    NotifyUser($"Set temperature is lower than current temperature. Heating element turned off.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+                    byte[] value = new byte[] { 0x00 };
+                    await WriteToStatusCharacteristicAsync(value);
+                }
+                else
+                {
+                    HeatElement = false;
+                    NotifyUser($"Current temperature is within 1 degree celsius of set temperature.", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+                }
+
+                await Task.Delay(1000);
+            }
+        }
+
+        private async Task WriteToStatusCharacteristicAsync(byte[] value)
+        {
+            if (heatingelementCharacteristic == null)
+            {
+                Debug.WriteLine("Alert Status characteristic not found");
+            }
+
+            using (var datawriter = new DataWriter())
+            {
+                datawriter.WriteBytes(value);
+
+                try
+                {
+                    GattCommunicationStatus result = await heatingelementCharacteristic.WriteValueAsync(datawriter.DetachBuffer(), GattWriteOption.WriteWithoutResponse);
+                    if (result == GattCommunicationStatus.Success)
+                    {
+                        Debug.WriteLine("Write to Alert Status characteristic successful");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"Error writing to Alert Status characteristic: {result}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error writing to Alert Status characteristic: {ex.Message}");
+                }
+            }
+        }
+
+        private async void StartComparing_Click(object sender, RoutedEventArgs e)
+        {
+            StartComparing.IsEnabled = false;
+            StopComparing.IsEnabled = true;
+            cts2 = new CancellationTokenSource();
+            CancellationToken token2 = cts2.Token;
+            if (!float.TryParse(tbGivenValue.Text, out float givenValue))
+            {
+                NotifyUser($"Please enter a valid integer number.", NotifyType.ErrorMessage, StatusBlockRegulator, StatusBorderRegulator);
+                cts2.Cancel();
+            }
+
+            TemperatureSetValue = givenValue;
+            await Task.Run(() => CompareTemperatureAndControlHeatingElement());
+        }
+
+        private async void StopComparing_Click(object sender, RoutedEventArgs e)
+        {
+            byte[] value = new byte[] { 0x00 };
+            await WriteToStatusCharacteristicAsync(value);
+            cts2.Cancel();
+            NotifyUser($"Temperature regulating stopped", NotifyType.StatusMessage, StatusBlockRegulator, StatusBorderRegulator);
+        }
+    }
+}
