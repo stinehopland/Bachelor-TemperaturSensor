@@ -40,7 +40,6 @@ namespace BLE_program
         private GattCharacteristic heatingelementCharacteristic;
 
         //only one characteristic at a time
-        private GattCharacteristic registeredCharacteristic;
         private GattPresentationFormat presentationFormat;
 
         //Error codes
@@ -391,7 +390,7 @@ namespace BLE_program
             StorageFolder folder = KnownFolders.DocumentsLibrary;
 
             // Create the file with the desired name and path
-            string fileName = $"{DateTime.Now.ToString("ddMMyy_HHmmss")}.txt";
+            string fileName = $"{DateTime.Now:ddMMyy_HHmmss}.txt";
             StorageFile file = await folder.CreateFileAsync(fileName, CreationCollisionOption.ReplaceExisting);
 
             //Open the stream for writing
@@ -417,7 +416,7 @@ namespace BLE_program
                             string formattedResult = FormatValueByPresentation(readResult.Value, presentationFormat);
 
                             //add timestamp
-                            string valueWithTimeStamp = $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")} - {formattedResult}";
+                            string valueWithTimeStamp = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {formattedResult}";
 
                             await writer.WriteLineAsync(valueWithTimeStamp);
                             await writer.FlushAsync();
@@ -484,10 +483,7 @@ namespace BLE_program
             cts.Cancel();
 
             // Dispose of the StreamWriter object if it exists
-            if (writer != null)
-            {
-                writer.Dispose();
-            }
+            writer?.Dispose();
 
             NotifyUser("Stopped reading temperature values and closed file", NotifyType.StatusMessage, StatusBlock, StatusBorder);
         }
