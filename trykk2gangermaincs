@@ -447,19 +447,12 @@ namespace BLE_program
                 return;
             }
 
-            // Prompt the user to choose a file name and location
-            FileSavePicker savePicker = new FileSavePicker();
-            savePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-            savePicker.FileTypeChoices.Add("Text file", new List<string>() { ".txt" });
-            savePicker.SuggestedFileName = "output";
-            StorageFile file = await savePicker.PickSaveFileAsync();
-            if (file == null)
-            {
-                return;
-            }
+            // Get the suggested start location
+            StorageFolder folder = KnownFolders.DocumentsLibrary;
 
-            // Get the file path and create the file
-            _ = file.Path;
+            // Create the file with the desired name and path
+            string fileName = $"{DateTime.Now.ToString("ddMMyy_HHmmss")}.txt";
+            StorageFile file = await folder.CreateFileAsync(fileName, CreationCollisionOption.ReplaceExisting);
 
             //Open the stream for writing
             using (StreamWriter writer = new StreamWriter(await file.OpenStreamForWriteAsync()))
