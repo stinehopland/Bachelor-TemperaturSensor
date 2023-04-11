@@ -138,15 +138,6 @@ namespace BLE_program
             }
         }
 
-        private void StartEnumerater()
-        {
-            if (deviceWatcher == null)
-            {
-                StartBleDeviceWatcher();
-                NotifyUser($"Device watcher started.", NotifyType.StatusMessage, StatusBlock, StatusBorder);
-            }
-        }
-
         private bool Not(bool value) => !value;
 
         //This method starts a device watcher that looks for all nearby Bluetooth devices.
@@ -338,103 +329,83 @@ namespace BLE_program
             EnumerateButton.Content = "Enumerating stopped";
             EnumerateButton.IsEnabled = false;
             ConnectButton.IsEnabled = false;
-
             NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage, StatusBlock, StatusBorder);
 
             var bleDeviceDisplay = ResultsListView.SelectedItem as BluetoothLEDeviceDisplay;
-
-            if (bleDeviceDisplay != null)
+            if (bleDeviceDisplay == null)
             {
-                SelectedBleDeviceId = bleDeviceDisplay.Id;
-                SelectedBleDeviceName = bleDeviceDisplay.Name;
-            }
-            try
-            {
-                bluetoothLeDevice = await BluetoothLEDevice.FromIdAsync(SelectedBleDeviceId);
-            }
-            catch
-            {
-                if (bluetoothLeDevice == null)
-                {
-                    NotifyUser("Select the Arduino", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
-                }
+                NotifyUser("Select the Arduino", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                return;
             }
 
+            SelectedBleDeviceId = bleDeviceDisplay.Id;
+            SelectedBleDeviceName = bleDeviceDisplay.Name;
 
-            if (bluetoothLeDevice != null)
+            bluetoothLeDevice = await BluetoothLEDevice.FromIdAsync(SelectedBleDeviceId);
+            if (bluetoothLeDevice == null)
             {
-                string customServiceUuidString = "707c54e2-aff4-40ea-b80f-4ec2339425d3";
-                Guid customServiceUuid = Guid.Parse(customServiceUuidString);
-                GattDeviceServicesResult result = await bluetoothLeDevice.GetGattServicesForUuidAsync(customServiceUuid, BluetoothCacheMode.Uncached);
-                if (result.Status == GattCommunicationStatus.Success)
-                {
-                    var customService = result.Services.FirstOrDefault();
-                    if (customService != null)
-                    {
-                        SelectedGattService = customService;
-                        NotifyUser("Connected to Custom service", NotifyType.StatusMessage, StatusBlock, StatusBorder);
-
-                        // Get the device ID
-                        Debug.WriteLine($"Device ID: {bluetoothLeDevice.DeviceId}");
-
-                        // Get the service UUID
-                        Debug.WriteLine($"Service UUID: {SelectedGattService.Uuid}");
-
-                        //Get the alertstatus and temperature characteristics
-                        string heatingElementCharacteristicString = "be3764b5-bcff-4e5c-a55b-ca698ef3cab7";
-                        Guid heatingElementCharacteristic = Guid.Parse(heatingElementCharacteristicString);
-
-                        var characteristicsResult = await SelectedGattService.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
-                        if (characteristicsResult.Status == GattCommunicationStatus.Success)
-                        {
-                            var characteristics = characteristicsResult.Characteristics;
-                            if (characteristics != null && characteristics.Count > 0)
-                            {
-                                foreach (var characteristic in characteristics)
-                                {
-                                    if (characteristic.Uuid == heatingElementCharacteristic)
-                                    {
-                                        if (characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.WriteWithoutResponse))
-                                        {
-                                            Debug.WriteLine("supports writing");
-                                        }
-                                        heatingelementCharacteristic = characteristic;
-                                        NotifyUser("Connected to Heating Element characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
-                                    }
-                                    else if (characteristic.Uuid == GattCharacteristicUuids.TemperatureMeasurement)
-                                    {
-                                        if (characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Read))
-                                        {
-                                            Debug.WriteLine("supports reading");
-                                        }
-                                        temperatureCharacteristic = characteristic;
-                                        NotifyUser("Connected to Temperature Measurement characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                NotifyUser("No characteristics found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
-                            }
-                        }
-                        else
-                        {
-                            NotifyUser("Error accessing characteristics", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
-                        }
-                    }
-                    else
-                    {
-                        NotifyUser("Custom Service not found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
-                    }
-                    ConnectButton.Content = "Connected";
-                }
-                else
-                {
-                    NotifyUser("Device unreachable", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
-                }
+                NotifyUser("Device not found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                return;
             }
+
+            Guid customServiceUuid = Guid.Parse("707c54e2-aff4-40ea-b80f-4ec2339425d3");
+            GattDeviceServicesResult result = await bluetoothLeDevice.GetGattServicesForUuidAsync(customServiceUuid, BluetoothCacheMode.Uncached);
+            if (result.Status != GattCommunicationStatus.Success || result.Services.Count == 0)
+            {
+                NotifyUser("Custom Service not found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+                return;
+            }
+
+            SelectedGattService = result.Services[0];
+            NotifyUser("Connected to Custom service", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+
+            heatingelementCharacteristic = await GetCharacteristicAsync(SelectedGattService, "be3764b5-bcff-4e5c-a55b-ca698ef3cab7", GattCharacteristicProperties.WriteWithoutResponse);
+            if (heatingelementCharacteristic == null)
+            {
+                NotifyUser("Heating Element characteristic not found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+            }
+            else
+            {
+                NotifyUser("Connected to Heating Element characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+            }
+
+            temperatureCharacteristic = await GetCharacteristicAsync(SelectedGattService, GattCharacteristicUuids.TemperatureMeasurement, GattCharacteristicProperties.Read);
+            if (temperatureCharacteristic == null)
+            {
+                NotifyUser("Temperature Measurement characteristic not found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
+            }
+            else
+            {
+                NotifyUser("Connected to Temperature Measurement characteristic", NotifyType.StatusMessage, StatusBlock, StatusBorder);
+            }
+
+            ConnectButton.Content = "Connected";
             CharacteristicReadButton.IsEnabled = true;
         }
+
+        private async Task<GattCharacteristic> GetCharacteristicAsync(GattDeviceService service, string uuidString, GattCharacteristicProperties properties)
+        {
+            Guid uuid = Guid.Parse(uuidString);
+            var result = await service.GetCharacteristicsForUuidAsync(uuid, BluetoothCacheMode.Uncached);
+            if (result.Status == GattCommunicationStatus.Success && result.Characteristics.Count > 0)
+            {
+                var characteristic = result.Characteristics.FirstOrDefault(c => c.CharacteristicProperties.HasFlag(properties));
+                return characteristic;
+            }
+            return null;
+        }
+
+        private async Task<GattCharacteristic> GetCharacteristicAsync(GattDeviceService service, Guid uuid, GattCharacteristicProperties properties)
+        {
+            var result = await service.GetCharacteristicsForUuidAsync(uuid, BluetoothCacheMode.Uncached);
+            if (result.Status == GattCommunicationStatus.Success && result.Characteristics.Count > 0)
+            {
+                var characteristic = result.Characteristics.FirstOrDefault(c => c.CharacteristicProperties.HasFlag(properties));
+                return characteristic;
+            }
+            return null;
+        }
+
 
         //This method is called when a user clicks the UI button named 'CharacteristicReadButton'
         private async void CharacteristicReadButton_Click()
