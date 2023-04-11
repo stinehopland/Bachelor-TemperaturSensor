@@ -58,7 +58,7 @@ namespace BLE_program
 
         public bool HeatElement;
 
-        private ObservableCollection<BluetoothLEDeviceDisplay> KnownDevices = new ObservableCollection<BluetoothLEDeviceDisplay>();
+        private List<BluetoothLEDeviceDisplay> KnownDevices = new List<BluetoothLEDeviceDisplay>();
         private List<DeviceInformation> UnknownDevices = new List<DeviceInformation>();
 
         private DeviceWatcher deviceWatcher;
@@ -75,7 +75,7 @@ namespace BLE_program
         {
             InitializeComponent();
 
-            ConnectButton.IsEnabled = false;
+            ConnectButton.IsEnabled = true;
             CharacteristicReadButton.IsEnabled = false;
             StopButton.IsEnabled = false;
             StartComparing.IsEnabled = false;
@@ -117,25 +117,6 @@ namespace BLE_program
             // Raise an event if necessary to enable a screen reader to announce the status update.
             var peer = FrameworkElementAutomationPeer.FromElement(targetBlock);
             peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
-        }
-
-
-        //This method is called when a user clicks on the enumerate button. 
-        //If the BLE watcher is not running, the method starts, and the text changes to "Stop Enumerating"
-        private void EnumerateButton_Click()
-        {
-            if (deviceWatcher == null)
-            {
-                StartBleDeviceWatcher();
-                EnumerateButton.Content = "Stop enumerating";
-                NotifyUser($"Device watcher started.", NotifyType.StatusMessage, StatusBlock, StatusBorder);
-            }
-            else
-            {
-                StopBleDeviceWatcher();
-                EnumerateButton.Content = "Start enumerating";
-                NotifyUser($"Device watcher stopped.", NotifyType.StatusMessage, StatusBlock, StatusBorder);
-            }
         }
 
         private bool Not(bool value) => !value;
@@ -325,27 +306,30 @@ namespace BLE_program
         //Connect Button 
         private async void ConnectButton_Click()
         {
-            StopBleDeviceWatcher();
-            EnumerateButton.Content = "Enumerating stopped";
-            EnumerateButton.IsEnabled = false;
             ConnectButton.IsEnabled = false;
+            StartBleDeviceWatcher();
             NotifyUser($"Connecting to Bluetooth device ...", NotifyType.StatusMessage, StatusBlock, StatusBorder);
 
-            var bleDeviceDisplay = ResultsListView.SelectedItem as BluetoothLEDeviceDisplay;
-            if (bleDeviceDisplay == null)
+            // Wait for a "Nano 33 BLE" device to be found
+            while (SelectedBleDeviceId == null)
             {
-                NotifyUser("Select the Arduino", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
-                return;
-            }
+                await Task.Delay(1000);
+                foreach (var device in KnownDevices)
+                {
+                    if (device.Name == "Nano 33 BLE")
+                    {
+                        // Connect to the device
+                        SelectedBleDeviceId = device.Id;
+                        SelectedBleDeviceName = device.Name;
 
-            SelectedBleDeviceId = bleDeviceDisplay.Id;
-            SelectedBleDeviceName = bleDeviceDisplay.Name;
-
-            bluetoothLeDevice = await BluetoothLEDevice.FromIdAsync(SelectedBleDeviceId);
-            if (bluetoothLeDevice == null)
-            {
-                NotifyUser("Device not found", NotifyType.ErrorMessage, StatusBlock, StatusBorder);
-                return;
+                        bluetoothLeDevice = await BluetoothLEDevice.FromIdAsync(SelectedBleDeviceId);
+                        if (bluetoothLeDevice != null)
+                        {
+                            StopBleDeviceWatcher();
+                            break;
+                        }
+                    }
+                }
             }
 
             Guid customServiceUuid = Guid.Parse("707c54e2-aff4-40ea-b80f-4ec2339425d3");
