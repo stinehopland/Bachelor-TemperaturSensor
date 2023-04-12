@@ -1,0 +1,49 @@
+<Page
+    x:Class="BLE_program.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+    xmlns:local="using:BLE_program"
+    xmlns:Charting="using:WinRTXamlToolkit.Controls.DataVisualization.Charting"
+    mc:Ignorable="d">
+
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Padding="12,10,12,12">
+        <TextBlock x:Name="NAVN" HorizontalAlignment="Left" Margin="10,34,0,0" TextWrapping="WrapWholeWords" VerticalAlignment="Top" Width="426" FontSize="24" FontWeight="Bold"><Run Text="Connect to Arduino Nano 33 "/><Run Text="BLE"/></TextBlock>
+        <StackPanel Margin="22,94,930,44">
+            <StackPanel Orientation="Horizontal">
+                <Button x:Name="ConnectandReadButton" Content="Run" Click="{x:Bind Path=ConnectandReadButton_Click}"
+                        Visibility="Visible" Margin="0,10,10,0"/>
+                <Button x:Name="StopButton" Content="Stop" Margin="0,10,10,0" Click="StopButton_Click"/>
+            </StackPanel>
+            <TextBlock x:Name="CharacteristicLatestValue" Margin="0,10,0,0"/>
+            <TextBlock x:Name="StatusLabel" Margin="10,0,0,10" TextWrapping="Wrap" Text="Status:" FontWeight="Bold" />
+            <Border x:Name="StatusBorder" HorizontalAlignment="Left" Width="500">
+                <ScrollViewer VerticalScrollMode="Auto"  VerticalScrollBarVisibility="Auto" MaxHeight="200" HorizontalAlignment="Left" Width="500">
+                    <!-- Use LiveSetting to enable screen readers to announce the status update. -->
+                    <TextBlock x:Name="StatusBlock" FontWeight="Bold" AutomationProperties.LiveSetting="Assertive"
+                                   MaxWidth="{Binding ActualWidth, ElementName=Splitter}" Margin="10,10,10,20" TextWrapping="Wrap" Width="500" HorizontalAlignment="Left"  />
+                </ScrollViewer>
+            </Border>
+            <TextBlock TextWrapping="Wrap"><Run Text="Set Temperature: "/><Run x:Name="SelectedDeviceRun1" FontWeight="Bold"/></TextBlock>
+            <TextBox x:Name="tbGivenValue" HorizontalAlignment="Left" Margin="0,10,0,0" TextWrapping="Wrap" Text="" Width="500" RenderTransformOrigin="-3.152,-12.348"/>
+            <Button x:Name="StartComparing" Margin="0,10,10,10" Content="Set Temperature" Click="StartComparing_Click"/>
+            <Button x:Name="StopComparing" Margin="140,-44,10,10" Content="Stop Regulating" Click="StopComparing_Click" RenderTransformOrigin="0.853,0.646"/>
+            <TextBlock x:Name="StatusRegulator" Margin="10,0,0,10" TextWrapping="Wrap" Text="Status: " FontWeight="Bold" />
+            <Border x:Name="StatusBorderRegulator" Margin="0,0,0,0" HorizontalAlignment="Left" Width="500">
+                <ScrollViewer VerticalScrollMode="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="200" Width="501">
+                    <TextBlock x:Name="StatusBlockRegulator" FontWeight="Bold" AutomationProperties.LiveSetting="Assertive" MaxWidth="{Binding ActualWidth, ElementName=Splitter}" Margin="10,10,10,20" TextWrapping="Wrap" HorizontalAlignment="Left" Width="500"/>
+                </ScrollViewer>
+            </Border>
+        </StackPanel>
+        <StackPanel Margin="631,10,34,35">
+            <Charting:Chart x:Name="LineChart" Title="Temperature Surveillance" FontSize="15" Height="934" Width="852">
+                <Charting:LineSeries Margin="0,0,-100,57" IndependentValuePath="Time" DependentValuePath="Temperature" Title="Temperature" FontSize="10" VerticalAlignment="Bottom" Background="#FF17F135" Height="801" RenderTransformOrigin="0.5, 0.5">
+                    <Charting:LineSeries.RenderTransform>
+                        <CompositeTransform ScaleY="1"/>
+                    </Charting:LineSeries.RenderTransform>
+                </Charting:LineSeries>
+            </Charting:Chart>
+        </StackPanel>
+    </Grid>
+</Page>
