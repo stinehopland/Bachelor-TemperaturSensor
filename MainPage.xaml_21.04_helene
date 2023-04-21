@@ -21,6 +21,7 @@ using System.Linq;
 using System.Threading;
 using WinRTXamlToolkit.Controls.DataVisualization.Charting;
 using Windows.UI.Popups;
+using System.Runtime.CompilerServices;
 
 //This code has taken elements from scenario1 & scenario2 of the microsoft sample code.
 //Referance: https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/bluetoothle/
@@ -65,6 +66,7 @@ namespace BLE_program
         public int timeInterval = 1000; // Interval for temperaturereadings in milliseconds
 
         private bool isReading = false;
+        private bool isComparing = false;
         private StreamWriter writer;
         private CancellationTokenSource cts;
         private CancellationTokenSource cts2;
@@ -495,10 +497,19 @@ namespace BLE_program
             // Cancel the reading loop
             cts.Cancel();
 
+
             // Dispose of the StreamWriter object if it exists
             writer?.Dispose();
 
-            NotifyUser("Temperature reading stopped. \nFile containing temperature data saved and closed.", StatusBlock);
+            if (isComparing)
+            {
+                StopRegulating();
+                NotifyUser("Temperature reading stopped. \nFile containing temperature data saved and closed. \nRegulation stopped.", StatusBlock);
+            }
+            else
+            {
+                NotifyUser("Temperature reading stopped. \nFile containing temperature data saved and closed.", StatusBlock);
+            }
         }
 
         private async Task CompareTemperatureAndControlHeatingElement()
@@ -567,6 +578,7 @@ namespace BLE_program
             StopComparing.IsEnabled = true;
             cts2 = new CancellationTokenSource();
             CancellationToken token2 = cts2.Token;
+            isComparing = true;
 
             if (!float.TryParse(tbGivenValue.Text, out float givenValue))
             {
@@ -581,12 +593,19 @@ namespace BLE_program
             }   
         }
 
-        private async void StopComparing_Click(object sender, RoutedEventArgs e)
+        private async void StopRegulating()
         {
             byte[] value = new byte[] { 0x00 };
             await WriteToStatusCharacteristicAsync(value);
+            NotifyUser($"OFF", tbHeatElementStatus);
             cts2.Cancel();
-            NotifyUser($"Temperature regulating stopped", StatusBlock);
+            isComparing = false;
+        }
+
+        private void StopComparing_Click(object sender, RoutedEventArgs e)
+        {
+            StopRegulating();
+            NotifyUser($"Temperature regulating stopped.", StatusBlock);
         }
 
         //Metoder til Graf i xaml
