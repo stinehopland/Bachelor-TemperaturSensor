@@ -21,7 +21,7 @@
                 <TextBlock FontWeight="Bold" Margin="-250,180,0,240"><Run Text="Regulation:"></Run></TextBlock>
                 <TextBlock TextWrapping="Wrap" Margin="-250,205,170,210"><Run Text="Set Temperature: "/><Run x:Name="SelectedDeviceRun1" FontWeight="Bold"/></TextBlock>
                 <TextBox x:Name="tbGivenValue" BorderBrush="LightGray" Margin="-360,200,-150,200" TextWrapping="Wrap" Text="" Width="105" RenderTransformOrigin="-3.152,-12.348" Height="32"/>
-                <Button x:Name="StartComparing" Background="#FFA7EBA7" Margin="-274,90,10,10" Content="Set Temperature" Click="StartComparing_Click"/>
+                <Button x:Name="StartComparing" Background="#FFD5FFD5" Margin="-274,90,10,10" Content="Set Temperature" Click="StartComparing_Click"/>
                 <TextBlock Margin="-275,290,185,130"><Run Text="Heat Element:"></Run></TextBlock>
                 <TextBlock x:Name="tbHeatElementStatus" Margin="-180,290,185,125" Height="30" Width="74"></TextBlock>
                 <Button x:Name="StopComparing" Background="LightPink" Margin="-353,255,10,10" Content="Stop Regulating" Click="StopComparing_Click" RenderTransformOrigin="0.853,0.646"/>
